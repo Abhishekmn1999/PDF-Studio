@@ -1,9 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+
+(function(){
+
+  document.addEventListener('contextmenu', function(e){ e.preventDefault(); return false; });
+
+  document.addEventListener('keydown', function(e){
+    if (e.keyCode === 123) { e.preventDefault(); return false; } // F12
+    if (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) { e.preventDefault(); return false; } // Ctrl+Shift+I / J / C
+    if (e.ctrlKey && (e.keyCode === 85 || e.keyCode === 83)) { e.preventDefault(); return false; } // Ctrl+U / Ctrl+S
+  });
+
+  setInterval(function(){
+    (function(){Function("debugger")();})();
+  }, 1000);
+})();
+</script>
+
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>PDF Studio — Split, Merge &amp; Tools</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%237c3aed'/%3E%3Cstop offset='100%25' stop-color='%23a855f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M20 14h16l10 10v24a2 2 0 0 1-2 2H20a2 2 0 0 1-2-2V16a2 2 0 0 1 2-2z' fill='%23ffffff'/%3E%3Cpath d='M36 14v10h10' fill='%23ddd6fe'/%3E%3Ctext x='32' y='42' font-family='sans-serif' font-weight='900' font-size='11' fill='%237c3aed' text-anchor='middle' letter-spacing='0.5'%3EPDF%3C/text%3E%3C/svg%3E"/>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
 :root{
@@ -106,6 +125,10 @@ h1{font-size:clamp(24px,4vw,42px);font-weight:800;line-height:1.1;margin:10px 0 
 .pg:hover .pg-trash:hover{background:rgba(239,68,68,1);transform:scale(1.15);}
 .pg-pv{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);border:none;color:#fff;font-size:10px;border-radius:6px;padding:2px 8px;cursor:pointer;white-space:nowrap;display:none;}
 .pg:hover .pg-pv{display:block;}
+/* ── Drag-select rubber band ── */
+#drag-sel-rect{position:fixed;pointer-events:none;z-index:800;border:1.5px solid var(--acc2);background:rgba(124,58,237,.10);border-radius:3px;display:none;}
+.pgrid.is-dragging{user-select:none;cursor:crosshair;}
+.pgrid.is-dragging .pg{pointer-events:none;}
 .pg-grp-badge{position:absolute;bottom:0;left:0;right:0;height:4px;border-radius:0 0 10px 10px;}
 
 /* ── Group builder ── */
@@ -148,15 +171,14 @@ h1{font-size:clamp(24px,4vw,42px);font-weight:800;line-height:1.1;margin:10px 0 
 .mdl-cls:hover{color:var(--red);}
 .mdl-bd{padding:14px 26px;overflow-y:auto;flex:1;}
 .mdl-ft{padding:14px 26px 22px;border-top:1px solid var(--bor);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;}
-/* Paste panel */
-.pp{background:var(--sur2);border:1px solid var(--bor);border-radius:14px;margin-bottom:12px;overflow:hidden;}
-.pp-hd{display:flex;align-items:center;justify-content:space-between;padding:11px 15px;cursor:pointer;user-select:none;font-size:13px;font-weight:700;}
-.pp-chev{transition:transform .2s;color:var(--mut);}
-.pp.open .pp-chev{transform:rotate(180deg);}
-.pp-bd{display:none;padding:0 15px 14px;}
-.pp.open .pp-bd{display:block;}
+
+/* ── Paste panel — always open, no toggle ── */
+.pp{background:rgba(124,58,237,.07);border:1.5px solid rgba(124,58,237,.25);border-radius:14px;margin-bottom:16px;overflow:hidden;}
+.pp-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 15px 0;font-size:13px;font-weight:800;color:var(--acc3);gap:10px;flex-wrap:wrap;}
+.pp-bd{padding:10px 15px 14px;}
 .pp-ta{width:100%;height:95px;background:var(--sur);border:1px solid var(--bor);border-radius:10px;padding:10px;font-family:'Outfit',sans-serif;font-size:13px;color:var(--txt);resize:vertical;outline:none;}
 .pp-ta:focus{border-color:var(--acc2);}
+.pp-actions{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
 .mbadge{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:#10b981;border-radius:100px;padding:3px 12px;font-size:12px;font-weight:700;}
 /* Rename rows */
 .rn-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--bor);}
@@ -165,24 +187,136 @@ h1{font-size:clamp(24px,4vw,42px);font-weight:800;line-height:1.1;margin:10px 0 
 .rn-inp:focus{border-color:var(--acc2);}
 .rn-pg{font-size:11px;color:var(--mut);white-space:nowrap;}
 
-/* ── Full Page Preview ── */
-.povl{position:fixed;inset:0;z-index:850;background:rgba(0,0,0,.88);display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;backdrop-filter:blur(10px);}
+/* ── Full PDF Viewer Overlay ── */
+.povl{position:fixed;inset:0;z-index:850;background:#525659;display:none;flex-direction:column;}
 .povl.on{display:flex;}
-.pstage{display:flex;align-items:center;justify-content:center;gap:16px;width:100%;padding:0 20px;}
-.pside{flex:0 0 auto;opacity:.4;cursor:pointer;transition:opacity .2s,transform .2s;display:flex;flex-direction:column;align-items:center;gap:6px;}
-.pside:hover{opacity:.85;transform:scale(1.05);}
-.pside.hide{opacity:0;pointer-events:none;}
-.pside canvas{display:block;max-height:40vh;max-width:150px;width:auto;height:auto;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.6);}
-.ps-lbl{color:rgba(255,255,255,.6);font-size:11px;font-weight:700;background:rgba(255,255,255,.08);padding:3px 10px;border-radius:100px;}
-.pmain{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;position:relative;}
-.pmain canvas{display:block;max-height:74vh;max-width:55vw;width:auto;height:auto;border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.8);animation:fsin .2s ease;}
+/* Toolbar — matches browser PDF viewer style */
+.pvt{display:flex;align-items:center;padding:0 10px;background:#3c3f41;border-bottom:1px solid #1e1e1e;flex-shrink:0;height:48px;gap:4px;user-select:none;}
+.pvt-sep{width:1px;height:24px;background:rgba(255,255,255,.18);margin:0 6px;flex-shrink:0;}
+.pvt-fn{flex:1;font-size:13px;font-weight:600;color:#e8eaed;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px;}
+.pvt-grp{display:flex;align-items:center;gap:2px;flex-shrink:0;}
+/* Icon buttons */
+.pvib{background:transparent;border:none;color:#bdc1c6;width:36px;height:36px;border-radius:4px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s;flex-shrink:0;}
+.pvib:hover{background:rgba(255,255,255,.1);color:#fff;}
+.pvib:active{background:rgba(255,255,255,.18);}
+.pvib.active{background:rgba(138,180,248,.2);color:#8ab4f8;}
+.pvib svg{width:18px;height:18px;fill:currentColor;}
+/* Page input */
+.pv-pg-wrap{display:flex;align-items:center;gap:5px;font-size:13px;color:#bdc1c6;}
+.pv-pg-inp{width:40px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:3px;color:#fff;font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;text-align:center;padding:3px 4px;outline:none;}
+.pv-pg-inp:focus{border-color:#8ab4f8;background:rgba(138,180,248,.12);}
+/* Zoom controls */
+.pv-zp-inp{width:52px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:3px;color:#fff;font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;text-align:center;padding:3px 4px;outline:none;}
+.pv-zp-inp:focus{border-color:#8ab4f8;background:rgba(138,180,248,.12);}
+/* Body = sidebar + canvas area */
+.pv-body{display:flex;flex:1;overflow:hidden;}
+/* Sidebar — page thumbnails panel */
+.pv-sb{width:196px;background:#404040;flex-shrink:0;border-right:1px solid #2a2a2a;display:none;flex-direction:column;overflow:hidden;}
+.pv-sb.on{display:flex;}
+.pv-sb-title{font-size:12px;font-weight:700;color:#9aa0a6;padding:10px 14px 8px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;letter-spacing:.3px;text-transform:uppercase;}
+.pv-sb-list{flex:1;overflow-y:auto;padding:8px 6px;}
+.pv-sb-list::-webkit-scrollbar{width:6px;}
+.pv-sb-list::-webkit-scrollbar-track{background:transparent;}
+.pv-sb-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:4px;}
+.pv-sb-item{display:flex;flex-direction:column;align-items:center;padding:10px 6px 7px;cursor:pointer;border-radius:6px;margin-bottom:2px;transition:background .12s;gap:6px;}
+.pv-sb-item:hover{background:rgba(255,255,255,.08);}
+.pv-sb-item.cur{background:rgba(138,180,248,.15);}
+.pv-sb-item.cur canvas{outline:2px solid #8ab4f8;outline-offset:2px;}
+.pv-sb-item canvas{border-radius:3px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:block;max-width:160px;}
+.pv-sb-item span{font-size:11px;color:#9aa0a6;font-weight:600;}
+.pv-sb-item.cur span{color:#8ab4f8;}
+/* Continuous Scrollable PDF Container with Permanent Visible Scroller */
+.pvs{
+  flex:1;
+  overflow-y:scroll !important;
+  overflow-x:auto;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:24px 20px 48px;
+  background:#525659;
+  scrollbar-width:auto;
+  scrollbar-color:rgba(255,255,255,.35) #323639;
+}
+.pvs::-webkit-scrollbar{
+  width:14px;
+}
+.pvs::-webkit-scrollbar-track{
+  background:#323639;
+}
+.pvs::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,.32);
+  border-radius:7px;
+  border:3px solid #323639;
+}
+.pvs::-webkit-scrollbar-thumb:hover{
+  background:rgba(255,255,255,.5);
+}
+
+#pv-canvas-wrap{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:18px;
+  width:100%;
+}
+.pv-page-slot{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#ffffff;
+  border-radius:2px;
+  box-shadow:0 3px 18px rgba(0,0,0,.5);
+  position:relative;
+  flex-shrink:0;
+}
+.pv-page-slot canvas{
+  display:block;
+  border-radius:2px;
+  width:100% !important;
+  height:100% !important;
+}
+.pv-slot-loading{
+  color:#94a3b8;
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:.3px;
+}
+
 @keyframes fsin{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
-.pclose{position:absolute;top:-12px;right:-12px;width:32px;height:32px;border-radius:50%;background:rgba(20,20,40,.9);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;transition:background .15s;}
-.pclose:hover{background:var(--red);}
-.pnav-bar{display:flex;align-items:center;gap:16px;}
-.pnav{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;width:42px;height:42px;border-radius:50%;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;}
-.pnav:hover{background:rgba(255,255,255,.18);}
-.plbl{font-size:14px;font-weight:700;color:rgba(255,255,255,.8);min-width:110px;text-align:center;}
+
+/* Full-screen viewer active: remove double scrollbar and hide floating theme btn */
+body.pv-active{overflow:hidden !important;}
+body.pv-active #themeBtn{display:none !important;}
+
+/* ── Full PDF Viewer Light Theme ── */
+html.light .povl{background:#e2e8f0;}
+html.light .pvt{background:#ffffff;border-bottom:1px solid #cbd5e1;}
+html.light .pvt-sep{background:rgba(0,0,0,.12);}
+html.light .pvt-fn{color:#1e293b;}
+html.light .pvib{color:#475569;}
+html.light .pvib:hover{background:rgba(0,0,0,.08);color:#0f172a;}
+html.light .pvib:active{background:rgba(0,0,0,.14);}
+html.light .pvib.active{background:rgba(124,58,237,.15);color:#7c3aed;}
+html.light .pv-pg-wrap{color:#64748b;}
+html.light .pv-pg-inp{background:#fff;border:1px solid #cbd5e1;color:#0f172a;}
+html.light .pv-pg-inp:focus{border-color:#7c3aed;background:#fff;}
+html.light .pv-zp-inp{background:#fff;border:1px solid #cbd5e1;color:#0f172a;}
+html.light .pv-zp-inp:focus{border-color:#7c3aed;background:#fff;}
+html.light .pv-sb{background:#f8fafc;border-right:1px solid #cbd5e1;}
+html.light .pv-sb-title{color:#64748b;border-bottom:1px solid rgba(0,0,0,.08);}
+html.light .pv-sb-list::-webkit-scrollbar-thumb{background:rgba(0,0,0,.2);}
+html.light .pv-sb-item:hover{background:rgba(0,0,0,.06);}
+html.light .pv-sb-item.cur{background:rgba(124,58,237,.12);}
+html.light .pv-sb-item.cur canvas{outline-color:#7c3aed;}
+html.light .pv-sb-item span{color:#64748b;}
+html.light .pv-sb-item.cur span{color:#7c3aed;}
+html.light .pvs{background:#e2e8f0;scrollbar-color:rgba(0,0,0,.35) #e2e8f0;}
+html.light .pvs::-webkit-scrollbar-track{background:#e2e8f0;}
+html.light .pvs::-webkit-scrollbar-thumb{background:rgba(0,0,0,.3);border-radius:7px;border:3px solid #e2e8f0;}
+html.light .pvs::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.5);}
+html.light .pv-page-slot{box-shadow:0 4px 20px rgba(0,0,0,.15);}
+html.light #pv-canvas-wrap canvas{box-shadow:none;}
 
 /* ── Tools ── */
 .tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(318px,1fr));gap:22px;}
@@ -232,9 +366,37 @@ h1{font-size:clamp(24px,4vw,42px);font-weight:800;line-height:1.1;margin:10px 0 
 .segs{display:flex;flex-direction:column;gap:7px;max-height:190px;overflow-y:auto;}
 .seg{background:var(--sur2);border:1px solid var(--bor);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;}
 .seg-s{font-size:11px;color:var(--mut);margin-top:2px;}
+/* Detected blank thumbnails in Smart Auto-Split */
+.a-blk-strip{display:flex;gap:8px;overflow-x:auto;padding:6px 2px;max-height:140px;}
+.a-blk-strip::-webkit-scrollbar{height:4px;}
+.a-blk-strip::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:4px;}
+.a-blk-card{flex:0 0 auto;width:76px;background:var(--sur2);border:1.5px solid rgba(239,68,68,.4);border-radius:8px;padding:5px;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;}
+.a-blk-card canvas{width:100%;height:auto;border-radius:4px;display:block;box-shadow:0 2px 6px rgba(0,0,0,.3);}
+.a-blk-badge{font-size:9px;font-weight:700;color:#ef4444;background:rgba(239,68,68,.12);padding:1px 5px;border-radius:4px;text-transform:uppercase;}
+.a-blk-num{font-size:10px;font-weight:700;color:var(--txt);}
 
 footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
 @media(max-width:640px){.tgrid{grid-template-columns:1fr;}.pgrid{grid-template-columns:repeat(auto-fill,minmax(82px,1fr));}}
+
+/* ── Zoom Slider ── */
+.zoom-row{display:flex;align-items:center;gap:10px;flex:1;min-width:180px;}
+.zoom-lbl{font-size:12px;font-weight:700;color:var(--mut);white-space:nowrap;}
+.zoom-sl{flex:1;accent-color:var(--acc);cursor:pointer;height:4px;border-radius:4px;}
+.zoom-val{font-size:12px;font-weight:800;color:var(--acc3);min-width:40px;text-align:right;}
+
+/* ── Jump to Page ── */
+.jmp-row{display:flex;align-items:center;gap:7px;flex-shrink:0;}
+.jmp-inp{width:72px;background:var(--sur2);border:1.5px solid var(--bor);border-radius:8px;padding:7px 10px;font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;color:var(--txt);outline:none;text-align:center;transition:border-color .15s;}
+.jmp-inp:focus{border-color:var(--acc2);}
+
+/* ── Keyboard badge ── */
+.kbd{display:inline-block;background:var(--sur2);border:1px solid var(--bor);border-radius:5px;padding:2px 6px;font-size:10px;font-weight:700;color:var(--mut);font-family:monospace;line-height:1.4;}
+.ks-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 12px;background:rgba(124,58,237,.05);border:1px solid rgba(124,58,237,.15);border-radius:10px;margin-bottom:10px;font-size:11px;color:var(--mut);}
+.ks-bar span{display:flex;align-items:center;gap:4px;}
+
+/* ── Jump highlight pulse ── */
+@keyframes jmpPulse{0%{box-shadow:0 0 0 0 rgba(124,58,237,.7);}70%{box-shadow:0 0 0 10px rgba(124,58,237,0);}100%{box-shadow:0 0 0 0 rgba(124,58,237,0);}}
+.pg.jmp-hl{animation:jmpPulse .7s ease 2;border-color:var(--acc)!important;}
 </style>
 </head>
 <body>
@@ -251,17 +413,21 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
       <button class="mdl-cls" onclick="closeModal()">✕</button>
     </div>
     <div class="mdl-bd">
+      <!-- Paste panel — always visible, no toggle needed -->
       <div class="pp" id="pp">
-        <div class="pp-hd" onclick="this.parentElement.classList.toggle('open')">
-          <span>📋 Paste list to fill all names</span>
-          <span class="pp-chev">▼</span>
+        <div class="pp-hd">
+          <span>📋 Paste names here — each line fills one field</span>
+          <span id="pp-badge" style="display:none"></span>
         </div>
         <div class="pp-bd">
-          <p style="font-size:12px;color:var(--mut);margin-bottom:8px">Paste numbered or plain lines — each line fills one name field.</p>
-          <textarea class="pp-ta" id="pp-ta" placeholder="1. invoice_jan&#10;2. report_q1&#10;3. contract" oninput="parsePaste()" onpaste="setTimeout(parsePaste,10)"></textarea>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:7px">
-            <button class="btn bg" style="padding:5px 13px;font-size:12px" onclick="document.getElementById('pp-ta').value='';parsePaste()">Clear</button>
-            <span class="mbadge" id="pp-badge" style="display:none"></span>
+          <p style="font-size:12px;color:var(--mut);margin-bottom:8px">
+            Paste a list (one name per line, numbered or plain). Or use <strong style="color:var(--acc3)">📎 Read Clipboard</strong> to pull directly from your clipboard.
+          </p>
+          <textarea class="pp-ta" id="pp-ta" placeholder="invoice_jan&#10;report_q1&#10;contract" oninput="parsePaste()" onpaste="setTimeout(parsePaste,10)"></textarea>
+          <div class="pp-actions">
+            <button class="btn bg" style="padding:6px 13px;font-size:12px" onclick="readClipboard()" title="Read text directly from your clipboard">📎 Read Clipboard</button>
+            <button class="btn bg" style="padding:6px 13px;font-size:12px" onclick="document.getElementById('pp-ta').value='';parsePaste()">🗑 Clear</button>
+            <button class="btn bp" id="pp-fill-btn" style="padding:6px 13px;font-size:12px;display:none" onclick="applyPaste()">✅ Apply to All Fields</button>
           </div>
         </div>
       </div>
@@ -275,28 +441,104 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
   </div>
 </div>
 
-<!-- Full Page Preview -->
-<div class="povl" id="povl" onclick="if(event.target===this)closePv()">
-  <div class="pstage">
-    <div class="pside hide" id="pv-prev" onclick="navPv(-1)">
-      <div id="pv-prev-box"></div>
-      <span class="ps-lbl" id="pv-prev-lbl"></span>
+<!-- Drag-selection rubber-band rectangle -->
+<div id="drag-sel-rect"></div>
+
+<!-- ═══ Full PDF Viewer Overlay ═══ -->
+<div class="povl" id="povl">
+  <!-- Toolbar — browser PDF viewer style -->
+  <div class="pvt">
+
+    <!-- Left: hamburger + filename -->
+    <div class="pvt-grp">
+      <button class="pvib" id="pv-sb-btn" onclick="pvToggleSb()" title="Toggle page thumbnails">
+        <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+      </button>
+      <span class="pvt-fn" id="pv-fn">—</span>
     </div>
-    <div class="pmain">
-      <button class="pclose" onclick="closePv()">✕</button>
-      <div id="pv-main-box"></div>
+
+    <!-- Center: page nav + zoom controls -->
+    <div class="pvt-grp">
+      <!-- Prev page -->
+      <button class="pvib" onclick="navPv(-1)" title="Previous page (←)">
+        <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      </button>
+      <!-- Page input -->
+      <div class="pv-pg-wrap">
+        <input type="number" class="pv-pg-inp" id="pv-pg-inp" min="1" value="1"
+          onkeydown="if(event.key==='Enter'){pvGoPage(this.value);this.blur();}"
+          onblur="pvGoPage(this.value)" title="Page number — press Enter to jump"/>
+        <span id="pv-total" style="font-size:13px;color:#bdc1c6;">/ 1</span>
+      </div>
+      <!-- Next page -->
+      <button class="pvib" onclick="navPv(1)" title="Next page (→)">
+        <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+      </button>
+
+      <div class="pvt-sep"></div>
+
+      <!-- Zoom out -->
+      <button class="pvib" onclick="pvZoomOut()" title="Zoom out (Ctrl+-)">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zm-2-5h4v1h-4z"/></svg>
+      </button>
+      <!-- Zoom % input -->
+      <input type="text" class="pv-zp-inp" id="pv-zoom-lbl" value="100%"
+        onkeydown="if(event.key==='Enter'){pvSetZoomPct(this.value);this.blur();}"
+        onblur="pvSetZoomPct(this.value)" title="Zoom level — type % and press Enter"/>
+      <!-- Zoom in -->
+      <button class="pvib" onclick="pvZoomIn()" title="Zoom in (Ctrl++)">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM10 10h-1V8H7V7h2V5h1v2h2v1h-2v2z"/></svg>
+      </button>
+
+      <div class="pvt-sep"></div>
+
+      <!-- Fit page -->
+      <button class="pvib" onclick="pvZoomFit()" title="Fit page to screen (Ctrl+0)" style="font-size:18px;width:36px;">
+        <svg viewBox="0 0 24 24"><path d="M15 3l2.3 2.3-2.89 2.87 1.42 1.42L18.7 6.7 21 9V3h-6zM3 9l2.3-2.3 2.87 2.89 1.42-1.42L6.7 5.3 9 3H3v6zm6 12l-2.3-2.3 2.89-2.87-1.42-1.42L5.3 17.3 3 15v6h6zm12-6l-2.3 2.3-2.87-2.89-1.42 1.42 2.89 2.87L15 21h6v-6z"/></svg>
+      </button>
+      <!-- Rotate -->
+      <button class="pvib" onclick="pvRotate()" title="Rotate page clockwise" style="font-size:18px;">
+        <svg viewBox="0 0 24 24"><path d="M7.47 21.49C4.2 19.93 1.86 16.76 1.5 13H0c.51 6.16 5.66 11 11.95 11 .37 0 .73-.03 1.1-.06L9.73 20.6l-2.26.89zm.89-6.29c-.19 0-.38-.03-.56-.08L5 18.32C6.18 19.39 7.73 20 9.44 20c3.62 0 6.55-2.92 6.55-6.5C16 9.92 13.07 7 9.44 7c-1.71 0-3.26.61-4.44 1.68L2 6v6h6L5.5 9.5C6.4 8.56 7.85 8 9.44 8 12.52 8 15 10.46 15 13.5S12.52 19 9.44 19c-.62 0-1.21-.1-1.76-.28l-.33-3.52z"/></svg>
+      </button>
     </div>
-    <div class="pside hide" id="pv-next" onclick="navPv(1)">
-      <div id="pv-next-box"></div>
-      <span class="ps-lbl" id="pv-next-lbl"></span>
+
+    <!-- Right: download, delete, theme, close -->
+    <div class="pvt-grp">
+      <!-- Download button (visible during full screen preview) -->
+      <button class="pvib" id="pv-dl-btn" style="display:none;color:#10b981;width:auto;padding:0 12px;gap:6px;font-size:12px;font-weight:700;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.35);" title="Download this PDF">
+        <svg viewBox="0 0 24 24" style="width:15px;height:15px;fill:currentColor;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        <span>Download</span>
+      </button>
+      <!-- Delete current page -->
+      <button class="pvib" id="pv-del-btn" onclick="pvDeleteCurrentPage()" title="Delete this page (Del)" style="color:#ef4444;">
+        <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      </button>
+      <div class="pvt-sep"></div>
+      <!-- Theme toggle -->
+      <button class="pvib" id="pv-theme-btn" onclick="toggleTheme()" title="Toggle light/dark theme" style="font-size:16px;">☀️</button>
+      <div class="pvt-sep"></div>
+      <!-- Close -->
+      <button class="pvib" onclick="closePv()" title="Close (Esc)" style="color:#f28b82;">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
     </div>
   </div>
-  <div class="pnav-bar">
-    <button class="pnav" onclick="navPv(-1)">&#8249;</button>
-    <span class="plbl" id="pv-lbl">Page 1</span>
-    <button class="pnav" onclick="navPv(1)">&#8250;</button>
+
+  <!-- Body: sidebar + scrollable canvas -->
+  <div class="pv-body">
+    <!-- Page thumbnails sidebar -->
+    <div class="pv-sb" id="pv-sb">
+      <div class="pv-sb-title">Pages</div>
+      <div class="pv-sb-list" id="pv-sb-list"></div>
+    </div>
+    <!-- Scrollable canvas area -->
+    <div class="pvs" id="pvs" onwheel="pvWheel(event)">
+      <div id="pv-canvas-wrap"></div>
+    </div>
   </div>
 </div>
+
+
 
 <div class="z">
   <header>
@@ -350,7 +592,6 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
             <label>Pages per group</label>
             <input type="number" id="evn-n" min="1" max="999" value="2" oninput="updEvnPreview()" style="width:56px"/>
           </div>
-          <!-- Quick picks -->
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="qc on" id="eq-2" onclick="pickN(2)" style="flex:0 0 auto;padding:7px 14px">2</button>
             <button class="qc" id="eq-3" onclick="pickN(3)" style="flex:0 0 auto;padding:7px 14px">3</button>
@@ -382,6 +623,28 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
           <div id="del-info" style="font-size:13px;font-weight:700;color:#ef4444">0 pages marked for deletion</div>
         </div>
       </div>
+      <!-- ── Zoom + Jump to Page toolbar ── -->
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--sur2);border:1px solid var(--bor);border-radius:12px;padding:10px 14px;margin-bottom:10px;">
+        <div class="zoom-row">
+          <span class="zoom-lbl">🔍 Zoom</span>
+          <input type="range" class="zoom-sl" id="zoom-sl" min="70" max="220" value="108" oninput="setZoom(this.value)"/>
+          <span class="zoom-val" id="zoom-val">108px</span>
+        </div>
+        <div style="width:1px;height:28px;background:var(--bor);flex-shrink:0;"></div>
+        <div class="jmp-row">
+          <span class="zoom-lbl">↩ Jump:</span>
+          <input type="number" class="jmp-inp" id="jmp-inp" placeholder="pg #" min="1"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();jumpTo(this.value);}"
+            title="Type a page number and press Enter"/>
+          <button class="btn bg" style="padding:6px 13px;font-size:12px" onclick="jumpTo(document.getElementById('jmp-inp').value)">Go</button>
+        </div>
+        <div style="margin-left:auto;font-size:11px;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <span><kbd class="kbd">Ctrl+A</kbd> Select all</span>
+          <span><kbd class="kbd">Del</kbd> Delete selected</span>
+          <span><kbd class="kbd">Ctrl+Z</kbd> Undo</span>
+          <span><kbd class="kbd">Esc</kbd> Close</span>
+        </div>
+      </div>
       <div class="pgrid" id="pgrid"></div>
       <div id="gb-strip-wrap" style="display:none;margin-bottom:16px">
         <div style="background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:12px 16px">
@@ -399,6 +662,7 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
         <button class="btn bg" style="padding:5px 13px;font-size:12px" onclick="selAll()">All</button>
         <button class="btn bg" style="padding:5px 13px;font-size:12px" onclick="selNone()">None</button>
         <button class="btn bg" style="padding:5px 13px;font-size:12px" onclick="selInv()">Invert</button>
+        <button class="btn bg" style="padding:5px 13px;font-size:12px;margin-left:auto;border-color:rgba(239,68,68,.35);color:#ef4444;" onclick="doResetMode()" title="Clear selection, groups, cuts and return to Range mode">↺ Reset</button>
       </div>
       <div class="div"></div>
       <div class="fn-row" style="margin-bottom:14px">
@@ -408,6 +672,7 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn bp" id="b-extract" onclick="doExtract()" disabled>✂️ Extract Selected</button>
+        <button class="btn bp" id="b-rng-ext" onclick="doExtractRange()" style="display:none">📏 Extract Range</button>
         <button class="btn bg" id="b-split-sel" onclick="doSplitSel()" style="display:none">📂 Split Selected Pages</button>
         <button class="btn bg" id="b-grp-merge" onclick="doGrpMerge()" style="display:none">🔗 Save Group as One</button>
         <button class="btn bg" onclick="doSplitAll()">📦 Split All Pages</button>
@@ -443,7 +708,10 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
         <input type="text" id="m-outname" placeholder="merged-document" spellcheck="false"/>
         <span class="fn-ext">.pdf</span>
       </div>
-      <button class="btn bp" id="b-merge" onclick="doMerge()">🔗 Merge &amp; Download</button>
+      <div style="display:flex;gap:10px;">
+        <button class="btn bg" id="b-merge-prev" onclick="previewMergedPdf()" style="flex:1">👁️ Preview Full Screen</button>
+        <button class="btn bp" id="b-merge" onclick="doMerge()" style="flex:1">🔗 Merge &amp; Download</button>
+      </div>
     </div>
   </div>
 
@@ -453,17 +721,21 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
 
       <!-- Compress -->
       <div class="tc">
-        <div class="tc-hd"><div class="tc-ico iv">🗂️</div><div><h3>Compress PDF</h3><p>Reduce file size without losing quality</p></div></div>
+        <div class="tc-hd"><div class="tc-ico iv">🗂️</div><div><h3>Compress PDF</h3><p>Reduce file size with real compression</p></div></div>
         <div id="c-dw"><div class="tdrop" id="c-drop" ondragover="dg(event,'c-drop')" ondragleave="udg('c-drop')" ondrop="tdrp(event,'c')"><input type="file" accept=".pdf" onchange="tld('c',this.files[0])"/><span class="tdrop-ico">📄</span><h4>Drop PDF here</h4><p>or click to browse</p></div></div>
         <div id="c-lw" style="display:none"><div class="tld"><span>📄</span><span class="tl-nm" id="c-fn"></span><span class="tl-mt" id="c-fm"></span><button class="tl-x" onclick="tclr('c')">✕</button></div></div>
-        <div><span class="lbl">Compression Method</span><div class="qrow">
-          <button class="qc on" id="cq-l" onclick="setQ('l')">Structural<span class="qc-lb">Clean unused data</span></button>
-          <button class="qc" id="cq-m" onclick="setQ('m')">Balanced<span class="qc-lb">+ object streams</span></button>
-          <button class="qc" id="cq-h" onclick="setQ('h')">Aggressive<span class="qc-lb">+ strip metadata</span></button>
+        <div><span class="lbl">Compression Level</span><div class="qrow">
+          <button class="qc" id="cq-l" onclick="setQ('l')">Lossless<span class="qc-lb">Clean structure</span></button>
+          <button class="qc on" id="cq-m" onclick="setQ('m')">Balanced<span class="qc-lb">~40–60% saved</span></button>
+          <button class="qc" id="cq-h" onclick="setQ('h')">Maximum<span class="qc-lb">~70–85% saved</span></button>
         </div></div>
         <div class="pblk" id="c-prg"><div class="pbw"><div class="pb" id="c-bar" style="width:0%"></div></div><p id="c-txt" style="font-size:12px;color:var(--mut);margin-top:4px"></p></div>
         <div class="rbar" id="c-res" style="display:none"><span>✅</span><span class="rl">Before:</span><span id="c-bef"></span><span style="color:var(--mut)">→</span><span class="rl">After:</span><span id="c-aft"></span><span id="c-pct" style="margin-left:auto"></span></div>
-        <button class="btn bp" id="bc" onclick="doCompress()" disabled style="width:100%">🗂️ Compress &amp; Download</button>
+        <div id="c-act-btns" style="display:none;gap:8px;margin-top:2px">
+          <button class="btn bg" id="c-prev-btn" onclick="previewCompressedPdf()" style="flex:1">👁️ Preview Full Screen</button>
+          <button class="btn bp" id="c-dl-btn" onclick="downloadCompressedPdf()" style="flex:1">⬇️ Download PDF</button>
+        </div>
+        <button class="btn bp" id="bc" onclick="doCompress()" disabled style="width:100%">🗂️ Compress PDF</button>
       </div>
 
       <!-- Normalize -->
@@ -529,13 +801,21 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
           <button class="qc" id="aq-h"    onclick="setAS('h')">High<span class="qc-lb">Nearly blank</span></button>
         </div></div>
         <div class="pblk" id="a-prg"><div class="pbw"><div class="pb" id="a-bar" style="width:0%"></div></div><p id="a-txt" style="font-size:12px;color:var(--mut);margin-top:4px"></p></div>
-        <div id="a-prev" style="display:none">
-          <span class="lbl">Detected Segments</span>
-          <div class="segs" id="a-segs"></div>
-          <p id="a-note" style="font-size:11px;color:var(--mut);margin-top:6px"></p>
+        <div id="a-prev" style="display:none;margin-top:8px">
+          <div id="a-blank-prev-box" style="display:none;margin-bottom:10px">
+            <span class="lbl" style="color:#ef4444">🔍 Found Blank / Separator Pages Preview</span>
+            <div class="a-blk-strip" id="a-blank-thumbs"></div>
+          </div>
+          <div id="a-note" style="font-size:12px;background:var(--sur2);border:1px solid var(--bor);border-radius:8px;padding:8px 12px;margin-bottom:10px"></div>
+          <span class="lbl">Detected Document Segments</span>
+          <div class="segs" id="a-segs" style="max-height:130px;margin-bottom:10px"></div>
         </div>
-        <button class="btn bg" id="ba-an" onclick="doAnalyze()" disabled style="width:100%">🔍 Analyze &amp; Preview Splits</button>
-        <button class="btn bp" id="ba-sp" onclick="doAutoSplit()" disabled style="width:100%">🧠 Auto-Split &amp; Download All</button>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button class="btn bg" id="ba-an" onclick="doAnalyze()" disabled style="width:100%">🔍 Analyze &amp; Detect Blank Pages</button>
+          <button class="btn bp" id="ba-prev-clean" onclick="previewCleanedPdf()" disabled style="width:100%;display:none;background:linear-gradient(135deg,#7c3aed,#a855f7);box-shadow:0 4px 18px rgba(124,58,237,.35)">👁️ Preview Cleaned PDF in Full Screen</button>
+          <button class="btn bp" id="ba-single" onclick="doDownloadNoBlanks()" disabled style="width:100%;display:none;background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 4px 18px rgba(16,185,129,.35)">📄 Download Single PDF (Excluding Blanks)</button>
+          <button class="btn bg" id="ba-sp" onclick="doAutoSplit()" disabled style="width:100%;display:none">📦 Split into Multiple Files</button>
+        </div>
       </div>
 
     </div>
@@ -549,15 +829,17 @@ footer{text-align:center;padding:34px 0 0;color:var(--mut);font-size:13px;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
 <script>
-/* ═══════════════════════════════════════════════════════
-   BLOCK 1: Theme toggle + Particles  (NO CDN dependency)
-   ═══════════════════════════════════════════════════════ */
+
 var _dk = true;
-document.getElementById('themeBtn').onclick = function() {
+window.toggleTheme = function() {
   _dk = !_dk;
   document.documentElement.classList.toggle('light', !_dk);
-  document.getElementById('themeBtn').textContent = _dk ? '☀️' : '🌙';
+  var btn = document.getElementById('themeBtn');
+  if(btn) btn.textContent = _dk ? '☀️' : '🌙';
+  var pvBtn = document.getElementById('pv-theme-btn');
+  if(pvBtn) pvBtn.textContent = _dk ? '☀️' : '🌙';
 };
+document.getElementById('themeBtn').onclick = window.toggleTheme;
 
 (function() {
   var cv=document.getElementById('cnv'), cx=cv.getContext('2d');
@@ -565,7 +847,6 @@ document.getElementById('themeBtn').onclick = function() {
   function rsz(){ W=cv.width=innerWidth; H=cv.height=innerHeight; }
   window.addEventListener('resize',rsz); rsz();
 
-  /* Palette: purple / teal / indigo */
   var PAL=['124,58,237','168,85,247','99,102,241','16,185,129','6,182,212','139,92,246'];
   var N=90, LINK=160, MR=130;
   var pts=[];
@@ -589,15 +870,11 @@ document.getElementById('themeBtn').onclick = function() {
   function frame(){
     var lt=document.documentElement.classList.contains('light');
     cx.fillStyle=lt?'#f0f2ff':'#0a0a12'; cx.fillRect(0,0,W,H);
-
-    /* Subtle vignette in dark mode */
     if(!lt){
       var vg=cx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.7);
       vg.addColorStop(0,'transparent'); vg.addColorStop(1,'rgba(0,0,8,.55)');
       cx.fillStyle=vg; cx.fillRect(0,0,W,H);
     }
-
-    /* Physics */
     for(var i=0;i<pts.length;i++){
       var p=pts[i];
       p.ph+=p.ps;
@@ -610,8 +887,6 @@ document.getElementById('themeBtn').onclick = function() {
       if(p.x<0){p.x=0;p.vx*=-1;} if(p.x>W){p.x=W;p.vx*=-1;}
       if(p.y<0){p.y=0;p.vy*=-1;} if(p.y>H){p.y=H;p.vy*=-1;}
     }
-
-    /* Connection lines */
     for(var i=0;i<pts.length;i++){
       for(var j=i+1;j<pts.length;j++){
         var dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y;
@@ -623,21 +898,15 @@ document.getElementById('themeBtn').onclick = function() {
         }
       }
     }
-
-    /* Dots with glow */
     for(var i=0;i<pts.length;i++){
       var p=pts[i], pulse=.75+.25*Math.sin(p.ph);
       var r=p.r*pulse, a=p.a*pulse;
-      /* glow halo */
       var g=cx.createRadialGradient(p.x,p.y,0,p.x,p.y,r*5);
       g.addColorStop(0,'rgba('+p.col+','+a+')'); g.addColorStop(1,'rgba('+p.col+',0)');
       cx.beginPath(); cx.arc(p.x,p.y,r*5,0,6.28); cx.fillStyle=g; cx.fill();
-      /* solid core */
       cx.beginPath(); cx.arc(p.x,p.y,r,0,6.28);
       cx.fillStyle='rgba('+p.col+','+Math.min(1,a*2)+')'; cx.fill();
     }
-
-    /* Mouse repulsion ring */
     if(mOn){
       cx.beginPath(); cx.arc(mx,my,MR,0,6.28);
       cx.strokeStyle=lt?'rgba(124,58,237,.07)':'rgba(168,85,247,.13)';
@@ -648,13 +917,11 @@ document.getElementById('themeBtn').onclick = function() {
   requestAnimationFrame(frame);
 })();
 
-/* ═══════════════════════════════════════════════════════
-   BLOCK 2: PDF logic  (runs after CDN scripts load)
-   ═══════════════════════════════════════════════════════ */
+
 window.addEventListener('load', function() {
   if (typeof pdfjsLib !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-  /* ── Helpers ── */
+  
   function ok() {
     if (typeof PDFLib==='undefined'||typeof pdfjsLib==='undefined') { toast('PDF libraries not loaded — check internet connection and reload','err'); return false; } return true;
   }
@@ -674,7 +941,7 @@ window.addEventListener('load', function() {
   function es(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function slp(ms) { return new Promise(function(r){setTimeout(r,ms);}); }
 
-  /* ── Tab switching ── */
+  
   window.sw = function(t) {
     ['split','merge','tools'].forEach(function(x){
       document.getElementById('p-'+x).classList.toggle('on',x===t);
@@ -682,14 +949,12 @@ window.addEventListener('load', function() {
     });
   };
 
-  /* ── Drop helpers ── */
+  
   window.dg = function(e,id){ e.preventDefault(); document.getElementById(id).classList.add('ov'); };
   window.udg= function(id)  { document.getElementById(id).classList.remove('ov'); };
   window.ev = function(e,id,fn){ e.preventDefault(); udg(id); var f=e.dataTransfer.files[0]; if(f&&f.type==='application/pdf')fn(f); else toast('Please drop a PDF file','err'); };
 
-  /* ════════════════════════════════════════════════════
-     SPLIT
-     ════════════════════════════════════════════════════ */
+  
   var sPdf=null, sPjs=null, sFn='', sOrd=[], sRot={}, sSel=new Set(), sMode='range', sCuts=new Set(), sPvI=0;
   var GC=['#7c3aed','#10b981','#0891b2','#f59e0b','#ef4444','#ec4899','#14b8a6','#f97316'];
 
@@ -725,7 +990,6 @@ window.addEventListener('load', function() {
         el.className='pg'+(sSel.has(pn)?' sel':'');
         var gi=grpMap[pn];
         if(sMode==='grp'&&gi!==undefined) el.style.borderColor=GC[gi%GC.length];
-        // Custom groups: color border by assigned group
         var cgi=cGrpAssign[pn];
         if(sMode==='cgrp'&&cgi!==undefined){ el.style.borderColor=GC[cgi%GC.length]; el.style.borderWidth='3px'; }
         el.dataset.i=i; el.dataset.pn=pn; el.draggable=true;
@@ -737,7 +1001,7 @@ window.addEventListener('load', function() {
         el.addEventListener('drop',function(e){
           e.preventDefault(); el.style.outline='';
           var fr=parseInt(e.dataTransfer.getData('t'));
-          if(fr!==i){var m=sOrd.splice(fr,1)[0];sOrd.splice(i,0,m);renderGrid();}
+          if(fr!==i){pushUndo();var m=sOrd.splice(fr,1)[0];sOrd.splice(i,0,m);renderGrid();}
         });
 
         var cv2=document.createElement('canvas');
@@ -745,25 +1009,22 @@ window.addEventListener('load', function() {
         var ck=document.createElement('div'); ck.className='pg-chk'; ck.textContent='✓';
         var rb=document.createElement('button'); rb.className='pg-rot'; rb.textContent='↻'; rb.title='Rotate';
         rb.onclick=function(e){e.stopPropagation();sRot[pn]=((sRot[pn]||0)+90)%360;renderGrid();};
-        // Trash button — instantly removes the page
         var tb=document.createElement('button'); tb.className='pg-trash'; tb.title='Delete this page';
         tb.textContent='🗑';
         tb.onclick=function(e){
-          e.stopPropagation();
+          e.stopPropagation(); pushUndo();
           var idx=sOrd.indexOf(pn);
           if(idx!==-1){ sOrd.splice(idx,1); sSel.delete(pn); sDel.delete(pn); }
           updSel(); renderGrid();
-          toast('Page '+pn+' deleted — '+sOrd.length+' pages remain','ok');
+          toast('Page '+pn+' deleted — '+sOrd.length+' remain · Ctrl+Z to undo','ok');
         };
         var pvb=document.createElement('button'); pvb.className='pg-pv'; pvb.textContent='⛶ Full view';
         pvb.onclick=function(e){e.stopPropagation();openPv(i);};
 
-        // Group color bar (sequential Group Builder)
         if(sMode==='grp'&&gi!==undefined){
           var bar=document.createElement('div'); bar.className='pg-grp-badge';
           bar.style.background=GC[gi%GC.length]; el.appendChild(bar);
         }
-        // Custom Groups: color bar + group label badge
         if(sMode==='cgrp'&&cgi!==undefined){
           var bar2=document.createElement('div'); bar2.className='pg-grp-badge';
           bar2.style.background=GC[cgi%GC.length]; el.appendChild(bar2);
@@ -772,7 +1033,6 @@ window.addEventListener('load', function() {
           glbl.textContent='G'+(cgi+1); el.appendChild(glbl);
         }
 
-        // Delete overlay X badge
         var dx=document.createElement('div'); dx.className='pg-del-x';
         dx.style.cssText='position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(239,68,68,.18);border-radius:10px;font-size:28px;font-weight:900;color:#ef4444;pointer-events:none;';
         dx.textContent='\u2715';
@@ -781,12 +1041,11 @@ window.addEventListener('load', function() {
         el.appendChild(cv2); el.appendChild(nm); el.appendChild(ck); el.appendChild(rb); el.appendChild(tb); el.appendChild(pvb); el.appendChild(dx);
         el.addEventListener('click',function(){
           if(sMode==='grp'){
-            // clicks on pages do nothing in grp mode — use the ✂️ dividers between pages
+
           } else if(sMode==='del'){
             sDel.has(pn)?sDel.delete(pn):sDel.add(pn);
             updDel(); renderGrid();
           } else if(sMode==='cgrp'){
-            // If page is already in active group → unassign; else assign to active group
             if(cGrpAssign[pn]===cGrpActive){ delete cGrpAssign[pn]; }
             else { cGrpAssign[pn]=cGrpActive; }
             updCGrpSummary(); renderGrid();
@@ -796,7 +1055,6 @@ window.addEventListener('load', function() {
         });
         grid.appendChild(el);
 
-        // Render thumbnail
         (async function(){
           try {
             var pg=await sPjs.getPage(pn);
@@ -807,14 +1065,23 @@ window.addEventListener('load', function() {
         })();
       })(i);
     }
-    // In group builder: inject clickable scissors dividers between thumbnails
+    
+    grid.style.display = '';          // let CSS class handle it (default: grid)
+    grid.style.flexWrap = '';
+    grid.style.alignItems = '';
+    grid.style.gap = '';
+    grid.style.gridTemplateColumns = sMode !== 'grp'
+      ? 'repeat(auto-fill,minmax('+zoomPx+'px,1fr))'
+      : '';                           // grp mode uses flex — column setting irrelevant
+    
+    Array.from(grid.children).forEach(function(c){ c.style.margin = ''; });
+
     if(sMode==='grp') injectGrpDividers();
     renderGbStrip();
   }
 
   function injectGrpDividers(){
     var grid=document.getElementById('pgrid');
-    // Switch to flex so dividers sit inline between thumbnails
     grid.style.display='flex'; grid.style.flexWrap='wrap';
     grid.style.alignItems='stretch'; grid.style.gap='0';
     var thumbs=Array.from(grid.children);
@@ -851,7 +1118,6 @@ window.addEventListener('load', function() {
           sCuts.has(afterPn)?sCuts.delete(afterPn):sCuts.add(afterPn);
           renderGbStrip(); renderGrid();
         });
-        // Insert divider after thumb k
         thumbs[k].insertAdjacentElement('afterend',div);
       })(k);
     }
@@ -859,7 +1125,7 @@ window.addEventListener('load', function() {
 
   function buildGrpMap() {
     if(sMode!=='grp') return {};
-    var map={}, cuts=[...sCuts].sort(function(a,b){return a-b;}), gi=0, start=1;
+    var map={}, gi=0;
     for(var k=0;k<sOrd.length;k++){
       var pn=sOrd[k]; map[pn]=gi;
       if(sCuts.has(pn)){ gi++; }
@@ -908,7 +1174,8 @@ window.addEventListener('load', function() {
   function updSel() {
     var n=sSel.size;
     document.getElementById('sel-cnt').textContent=n+' page'+(n!==1?'s':'')+' selected';
-    document.getElementById('b-extract').disabled=(n===0||sMode==='evn'||sMode==='cgrp'||sMode==='del');
+    document.getElementById('b-extract').disabled=(n===0||sMode==='evn'||sMode==='cgrp'||sMode==='del'||sMode==='range');
+    document.getElementById('b-rng-ext').style.display=sMode==='range'?'inline-flex':'none';
     document.getElementById('b-split-sel').style.display=(sMode==='pick'&&n>0)?'inline-flex':'none';
     document.getElementById('b-grp-merge').style.display=(sMode==='pick'&&n>1)?'inline-flex':'none';
     document.getElementById('b-grp-split').style.display=sMode==='grp'?'inline-flex':'none';
@@ -922,6 +1189,106 @@ window.addEventListener('load', function() {
   window.selNone = function(){ sSel.clear(); updSel(); updGridClasses(); };
   window.selInv  = function(){ sOrd.forEach(function(p){sSel.has(p)?sSel.delete(p):sSel.add(p);}); updSel(); updGridClasses(); };
 
+  
+  window.doResetMode = function() {
+    sSel.clear();
+    sCuts.clear();
+    sDel.clear();
+    sRot  = {};
+    cGrpAssign = {};
+    cGrpActive = 0;
+    cGrpCount  = 1;
+    undoStack  = [];
+
+    if(sPdf) {
+      sOrd = [];
+      for(var i = 1; i <= sPdf.getPageCount(); i++) sOrd.push(i);
+    }
+    setMode('range');
+    renderGrid();
+    updSel();
+    toast('✔ Reset — back to original page order, Range mode', 'ok');
+  };
+
+  
+  (function() {
+    var ds = null; // drag-state
+    var rect = document.getElementById('drag-sel-rect');
+
+    function getGrid() { return document.getElementById('pgrid'); }
+
+    function updRect() {
+      if(!ds) return;
+      var x = Math.min(ds.x0, ds.x1), y = Math.min(ds.y0, ds.y1);
+      var w = Math.abs(ds.x1 - ds.x0), h = Math.abs(ds.y1 - ds.y0);
+      rect.style.cssText = 'display:block;left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+h+'px;';
+    }
+
+    function applyDragSelection(shiftKey) {
+      if(!ds) return;
+      var x0 = Math.min(ds.x0, ds.x1), x1 = Math.max(ds.x0, ds.x1);
+      var y0 = Math.min(ds.y0, ds.y1), y1 = Math.max(ds.y0, ds.y1);
+      var moved = Math.abs(ds.x1-ds.x0) > 5 || Math.abs(ds.y1-ds.y0) > 5;
+      if(!moved) return;
+
+      if(!shiftKey) sSel.clear(); // clear previous unless Shift held
+
+      document.querySelectorAll('#pgrid .pg').forEach(function(pg) {
+        var r = pg.getBoundingClientRect();
+
+        if(r.left < x1 && r.right > x0 && r.top < y1 && r.bottom > y0) {
+          sSel.add(parseInt(pg.dataset.pn));
+        }
+      });
+      updSel();
+      updGridClasses();
+    }
+
+    document.addEventListener('mousedown', function(e) {
+      if(e.button !== 0) return;                   // left button only
+      var grid = getGrid();
+      if(!grid || !sPdf) return;
+
+      if(e.target.closest('.pg')) return;
+      if(!grid.contains(e.target)) return;
+
+      if(sMode === 'del' || sMode === 'cgrp') return;
+
+      ds = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, shift: e.shiftKey };
+      grid.classList.add('is-dragging');
+      updRect();
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+      if(!ds) return;
+      ds.x1 = e.clientX;
+      ds.y1 = e.clientY;
+      updRect();
+    });
+
+    document.addEventListener('mouseup', function(e) {
+      if(!ds) return;
+      ds.x1 = e.clientX;
+      ds.y1 = e.clientY;
+      applyDragSelection(ds.shift || e.shiftKey);
+      rect.style.display = 'none';
+      var grid = getGrid();
+      if(grid) grid.classList.remove('is-dragging');
+      ds = null;
+    });
+
+
+    document.addEventListener('keydown', function(e) {
+      if(e.key === 'Escape' && ds) {
+        rect.style.display = 'none';
+        var grid = getGrid();
+        if(grid) grid.classList.remove('is-dragging');
+        ds = null;
+      }
+    }, true); // use capture so it fires before other handlers
+  })();
+
   window.setMode = function(m) {
     sMode=m; sSel.clear(); sCuts.clear(); sDel.clear();
     ['range','pick','grp','evn','cgrp','del'].forEach(function(x){ var el=document.getElementById('m-'+x); if(el)el.classList.toggle('on',x===m); });
@@ -934,7 +1301,7 @@ window.addEventListener('load', function() {
     updSel(); renderGrid();
   };
 
-  /* ── Delete Pages state & helpers ── */
+  
   var sDel=new Set();
   function updDel(){
     var n=sDel.size, total=sOrd.length, rem=total-n;
@@ -965,7 +1332,7 @@ window.addEventListener('load', function() {
     toast('🗑️ Removed '+sDel.size+' page'+(sDel.size>1?'s':'')+' → '+keep.length+' pages saved','ok');
   };
 
-  /* ── Custom Groups state & helpers ── */
+  
   var cGrpAssign={}, cGrpActive=0, cGrpCount=1;
 
   window.addCGrp = function(){
@@ -1012,12 +1379,10 @@ window.addEventListener('load', function() {
       u.textContent=unassigned+' unassigned';
       sum.appendChild(u);
     }
-    // Repaint grid to show latest colors
     document.querySelectorAll('.pg').forEach(function(el){
       var pn=parseInt(el.dataset.pn), cgi=cGrpAssign[pn];
       el.style.borderColor=cgi!==undefined?GC[cgi%GC.length]:'';
       el.style.borderWidth=cgi!==undefined?'3px':'';
-      // Update label badge
       el.querySelectorAll('.cgrp-lbl').forEach(function(lb){lb.remove();});
       if(cgi!==undefined){
         var glbl=document.createElement('div'); glbl.className='cgrp-lbl';
@@ -1044,7 +1409,7 @@ window.addEventListener('load', function() {
     openModal('Download Custom Groups','Name each group file ('+items.length+' groups)',items);
   };
 
-  /* ── Every N Pages helpers ── */
+  
   window.pickN = function(n) {
     document.getElementById('evn-n').value=n;
     [2,3,4,5,10].forEach(function(x){ document.getElementById('eq-'+x).classList.toggle('on',x===n); });
@@ -1059,7 +1424,6 @@ window.addEventListener('load', function() {
     info.style.display='block';
     desc.innerHTML='📄 <strong>'+total+'</strong> pages → <strong>'+chunks+'</strong> file'+(chunks!==1?'s':'')+'&nbsp;&nbsp;·&nbsp;&nbsp; '+
       (chunks>1?'First '+(chunks-1)+' files: <strong>'+n+'</strong> pages each · Last file: <strong>'+last+'</strong> page'+(last!==1?'s':''):'All pages in one file');
-    // Sync quick-pick buttons
     [2,3,4,5,10].forEach(function(x){ var el=document.getElementById('eq-'+x); if(el)el.classList.toggle('on',x===n); });
   };
   window.doEveryN = function() {
@@ -1076,7 +1440,7 @@ window.addEventListener('load', function() {
     openModal('Split Every '+n+' Pages','Name each output file ('+items.length+' files)',items);
   };
 
-  /* ── Split actions ── */
+  
   window.doExtract = async function() {
     if(!ok()||!sSel.size)return;
     var pages=[...sSel].sort(function(a,b){return a-b;});
@@ -1092,10 +1456,9 @@ window.addEventListener('load', function() {
 
   window.doSplitAll = function() {
     if(!sPdf)return;
-    var n=sPdf.getPageCount(), base=document.getElementById('s-outname').value.trim()||sFn;
-    var items=[];
-    for(var i=1;i<=n;i++) items.push({pages:[i],label:base+'_p'+i});
-    openModal('Split All Pages','Name each output file',items);
+    var base=document.getElementById('s-outname').value.trim()||sFn;
+    var items=sOrd.map(function(pn){return {pages:[pn],label:base+'_p'+pn};});
+    openModal('Split All Pages','Name each output file ('+items.length+' pages)',items);
   };
 
   window.doSplitSel = function() {
@@ -1119,47 +1482,90 @@ window.addEventListener('load', function() {
   };
 
   window.resetSplit = function() {
-    sPdf=null;sPjs=null;sOrd=[];sSel.clear();sRot={};sCuts.clear();
+    sPdf=null; sPjs=null; sOrd=[]; sSel.clear(); sRot={}; sCuts.clear();
+    sDel.clear(); cGrpAssign={}; cGrpActive=0; cGrpCount=1; undoStack=[];
     document.getElementById('scard').style.display='none';
     document.getElementById('sdrop').style.display='block';
     document.getElementById('pgrid').innerHTML='';
+    sMode='range';
   };
 
-  /* ── Rename Modal ── */
+  
   var _modalItems=[];
+
   function openModal(title, sub, items) {
     _modalItems=items;
     document.getElementById('mdl-title').textContent=title;
     document.getElementById('mdl-sub').textContent=sub;
+
     document.getElementById('pp-ta').value='';
     document.getElementById('pp-badge').style.display='none';
+    document.getElementById('pp-fill-btn').style.display='none';
+
     var rows=document.getElementById('rn-rows'); rows.innerHTML='';
     items.forEach(function(it,i){
       var r=document.createElement('div'); r.className='rn-row';
       var pgTxt=it.pages.length===1?'p'+it.pages[0]:'pp '+it.pages[0]+'–'+it.pages[it.pages.length-1]+' ('+it.pages.length+'pg)';
-      r.innerHTML='<span class="rn-lbl"><strong>'+(i+1)+' / '+items.length+'</strong></span><input class="rn-inp" id="rn-'+i+'" type="text" value="'+it.label+'" spellcheck="false"/><span class="rn-pg">'+pgTxt+'</span>';
+
+      var lbl=document.createElement('span'); lbl.className='rn-lbl';
+      lbl.innerHTML='<strong>'+(i+1)+' / '+items.length+'</strong>';
+      var inp=document.createElement('input'); inp.className='rn-inp'; inp.id='rn-'+i;
+      inp.type='text'; inp.spellcheck=false; inp.value=it.label;
+      var pg=document.createElement('span'); pg.className='rn-pg'; pg.textContent=pgTxt;
+      r.appendChild(lbl); r.appendChild(inp); r.appendChild(pg);
       rows.appendChild(r);
     });
     document.getElementById('modal').classList.add('on');
+
+    setTimeout(function(){ document.getElementById('pp-ta').focus(); }, 80);
   }
+
   window.closeModal = function() { document.getElementById('modal').classList.remove('on'); };
 
+  
   window.parsePaste = function() {
-    var lines=document.getElementById('pp-ta').value.split('\n').map(function(l){return l.replace(/^\s*\d+[.\)\-]\s*/,'').trim();}).filter(Boolean);
+    var raw=document.getElementById('pp-ta').value;
+    var lines=raw.split('\n')
+      .map(function(l){ return l.replace(/^\s*\d+[.\)\-]\s*/,'').trim(); })
+      .filter(Boolean);
     var total=_modalItems.length, filled=Math.min(lines.length,total);
+
     lines.forEach(function(l,i){ var inp=document.getElementById('rn-'+i); if(inp&&l)inp.value=l; });
-    var bd=document.getElementById('pp-badge');
-    if(!lines.length){ bd.style.display='none'; return; }
-    bd.style.display='inline';
+    var bd=document.getElementById('pp-badge'), fb=document.getElementById('pp-fill-btn');
+    if(!lines.length){ bd.style.display='none'; fb.style.display='none'; return; }
+    fb.style.display='inline-flex';
     if(lines.length>total){
-      bd.textContent='\u26a0\ufe0f '+total+'/'+total+' filled \u2014 '+(lines.length-total)+' extra line'+(lines.length-total>1?'s':'')+' ignored';
+      bd.textContent='⚠ '+total+'/'+total+' filled · '+(lines.length-total)+' extra line'+(lines.length-total>1?'s':'')+' ignored';
       bd.style.cssText='display:inline;padding:3px 10px;border-radius:100px;font-size:12px;font-weight:700;background:rgba(245,158,11,.18);color:#f59e0b;border:1px solid rgba(245,158,11,.4);';
     } else if(lines.length<total){
-      bd.textContent='\u2713 '+filled+'/'+total+' filled \u2014 '+(total-lines.length)+' field'+(total-lines.length>1?'s':'')+' still empty';
+      bd.textContent='✓ '+filled+'/'+total+' filled · '+(total-lines.length)+' field'+(total-lines.length>1?'s':'')+' still empty';
       bd.style.cssText='display:inline;padding:3px 10px;border-radius:100px;font-size:12px;font-weight:700;background:rgba(124,58,237,.12);color:#7c3aed;border:1px solid rgba(124,58,237,.3);';
     } else {
-      bd.textContent='\u2705 '+filled+'/'+total+' \u2014 all fields filled';
+      bd.textContent='✅ '+filled+'/'+total+' — all fields filled';
       bd.style.cssText='display:inline;padding:3px 10px;border-radius:100px;font-size:12px;font-weight:700;background:rgba(16,185,129,.12);color:#10b981;border:1px solid rgba(16,185,129,.3);';
+    }
+    bd.style.display='inline';
+  };
+
+  
+  window.applyPaste = function() {
+    parsePaste(); // already live-fills, this is just a confirmation action
+    toast('Names applied to all fields ✓','ok');
+  };
+
+  
+  window.readClipboard = async function() {
+    try {
+      if(!navigator.clipboard || !navigator.clipboard.readText){
+        toast('Clipboard API not available — use Ctrl+V in the text box instead','err'); return;
+      }
+      var text=await navigator.clipboard.readText();
+      if(!text.trim()){ toast('Clipboard is empty','err'); return; }
+      document.getElementById('pp-ta').value=text;
+      parsePaste();
+      toast('Clipboard pasted — '+text.split('\n').filter(function(l){return l.trim();}).length+' lines read','ok');
+    } catch(e){
+      toast('Clipboard access denied — use Ctrl+V in the text box instead','err');
     }
   };
 
@@ -1170,7 +1576,8 @@ window.addEventListener('load', function() {
     for(var i=0;i<_modalItems.length;i++){
       pr.textContent='Saving '+(i+1)+'/'+_modalItems.length+'…';
       var it=_modalItems[i];
-      var name=(document.getElementById('rn-'+i)?.value.trim()||it.label).replace(/\.pdf$/i,'');
+      var inp=document.getElementById('rn-'+i);
+      var name=(inp?inp.value.trim():'').replace(/\.pdf$/i,'')||it.label.replace(/\.pdf$/i,'');
       var nd=await PDFLib.PDFDocument.create();
       for(var j=0;j<it.pages.length;j++){
         var pn=it.pages[j], c=await nd.copyPages(sPdf,[pn-1]);
@@ -1183,43 +1590,570 @@ window.addEventListener('load', function() {
     closeModal(); toast('Downloaded '+_modalItems.length+' files','ok');
   };
 
-  /* ── Page Preview ── */
-  window.openPv = async function(idx) { sPvI=idx; await renderPv(idx); document.getElementById('povl').classList.add('on'); };
-  window.closePv = function() { document.getElementById('povl').classList.remove('on'); };
-  window.navPv = async function(d) { var n=sPvI+d; if(n>=0&&n<sOrd.length){sPvI=n;await renderPv(n);} };
+  
+  var pvZoom    = 1.0;   // user zoom multiplier
+  var pvFitSc   = 1.0;   // computed fit-to-screen scale
+  var pvRendering = false;
+  var _pvCustom = null;  // holds custom preview state when previewing external PDFs
 
-  async function renderPv(idx) {
-    async function box(bid,pn,r,mh) {
-      var b=document.getElementById(bid); b.innerHTML='';
-      if(pn==null)return;
-      try {
-        var pg=await sPjs.getPage(pn);
-        var vp=pg.getViewport({scale:1,rotation:r});
-        var sc=Math.min(1.8,(innerHeight*mh)/vp.height);
-        var vp2=pg.getViewport({scale:sc,rotation:r});
-        var cv2=document.createElement('canvas'); cv2.width=vp2.width; cv2.height=vp2.height;
-        await pg.render({canvasContext:cv2.getContext('2d'),viewport:vp2}).promise;
-        b.appendChild(cv2);
-      } catch(e){}
+  
+  window.openPv = async function(idx) {
+    _pvCustom = null;
+    var pvDlBtn = document.getElementById('pv-dl-btn');
+    if(pvDlBtn) pvDlBtn.style.display = 'none';
+    var pvDelBtn = document.getElementById('pv-del-btn');
+    if(pvDelBtn) pvDelBtn.style.display = 'inline-flex';
+
+    sPvI = idx; pvZoom = 1.0;
+    document.getElementById('povl').classList.add('on');
+    document.body.classList.add('pv-active');
+    var pvBtn = document.getElementById('pv-theme-btn');
+    if(pvBtn) pvBtn.textContent = _dk ? '☀️' : '🌙';
+    await pvRender();
+  };
+
+  
+  window.openPvCustom = async function(pdfBytes, title, downloadFn, startPageIndex) {
+    try {
+      var pjsDoc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes) }).promise;
+      var ord = [];
+      for(var i = 1; i <= pjsDoc.numPages; i++) ord.push(i);
+
+      _pvCustom = {
+        pjs: pjsDoc,
+        ord: ord,
+        rot: {},
+        title: title || 'Preview',
+        downloadFn: downloadFn,
+        prevPjs: sPjs,
+        prevOrd: sOrd,
+        prevRot: sRot,
+        prevFn:  sFn,
+        prevPvI: sPvI
+      };
+
+      sPjs = pjsDoc;
+      sOrd = ord;
+      sRot = {};
+      sFn  = (title || 'Document').replace(/\.pdf$/i, '');
+      sPvI = (startPageIndex !== undefined && startPageIndex >= 0 && startPageIndex < ord.length) ? startPageIndex : 0;
+      pvZoom = 1.0;
+
+      document.getElementById('povl').classList.add('on');
+      document.body.classList.add('pv-active');
+      var pvBtn = document.getElementById('pv-theme-btn');
+      if(pvBtn) pvBtn.textContent = _dk ? '☀️' : '🌙';
+
+      var pvDlBtn = document.getElementById('pv-dl-btn');
+      if(pvDlBtn) {
+        if(downloadFn) {
+          pvDlBtn.style.display = 'inline-flex';
+          pvDlBtn.onclick = function() { downloadFn(); };
+        } else {
+          pvDlBtn.style.display = 'none';
+        }
+      }
+
+      var pvDelBtn = document.getElementById('pv-del-btn');
+      if(pvDelBtn) pvDelBtn.style.display = downloadFn ? 'none' : 'inline-flex';
+
+      await pvRender();
+      if(pvSbOpen) pvRenderSidebar();
+    } catch(e) {
+      toast('Preview error: ' + e.message, 'err');
+      console.error(e);
     }
-    var pn=sOrd[idx], rot=sRot[pn]||0;
-    await box('pv-main-box',pn,rot,.74);
-    var pi=idx-1, ni=idx+1;
-    var pp=document.getElementById('pv-prev'), pn2=document.getElementById('pv-next');
-    if(pi>=0){ pp.classList.remove('hide'); await box('pv-prev-box',sOrd[pi],sRot[sOrd[pi]]||0,.40); document.getElementById('pv-prev-lbl').textContent='Page '+sOrd[pi]; }
-    else pp.classList.add('hide');
-    if(ni<sOrd.length){ pn2.classList.remove('hide'); await box('pv-next-box',sOrd[ni],sRot[sOrd[ni]]||0,.40); document.getElementById('pv-next-lbl').textContent='Page '+sOrd[ni]; }
-    else pn2.classList.add('hide');
-    document.getElementById('pv-lbl').textContent='Page '+pn+' of '+sOrd.length;
+  };
+
+  window.closePv = function() {
+    document.getElementById('povl').classList.remove('on');
+    document.body.classList.remove('pv-active');
+    if(_pvCustom) {
+      sPjs = _pvCustom.prevPjs;
+      sOrd = _pvCustom.prevOrd;
+      sRot = _pvCustom.prevRot;
+      sFn  = _pvCustom.prevFn;
+      sPvI = _pvCustom.prevPvI;
+      _pvCustom = null;
+      var pvDlBtn = document.getElementById('pv-dl-btn');
+      if(pvDlBtn) pvDlBtn.style.display = 'none';
+      var pvDelBtn = document.getElementById('pv-del-btn');
+      if(pvDelBtn) pvDelBtn.style.display = 'inline-flex';
+    }
+  };
+
+  window.navPv = async function(d) {
+    var n = sPvI + d;
+    if(n >= 0 && n < sOrd.length){ sPvI = n; pvZoom = 1.0; await pvRender(); }
+  };
+
+  
+  var pvSbOpen = false;
+
+  window.pvToggleSb = function() {
+    pvSbOpen = !pvSbOpen;
+    var sb  = document.getElementById('pv-sb');
+    var btn = document.getElementById('pv-sb-btn');
+    sb.classList.toggle('on', pvSbOpen);
+    btn.classList.toggle('active', pvSbOpen);
+    if(pvSbOpen) pvRenderSidebar();
+  };
+
+  
+  function pvRenderSidebar() {
+    if(!sPjs) return;
+    var list = document.getElementById('pv-sb-list');
+    list.innerHTML = '';
+
+    sOrd.forEach(function(pn, idx) {
+      var item = document.createElement('div');
+      item.className = 'pv-sb-item' + (idx === sPvI ? ' cur' : '');
+      item.dataset.idx = idx;
+      item.title = 'Go to page ' + pn;
+      item.onclick = function() {
+        sPvI = idx;
+        var slot = document.getElementById('pv-slot-' + idx);
+        if(slot) slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        var pgInp = document.getElementById('pv-pg-inp');
+        if(pgInp) pgInp.value = pn;
+        pvSbHighlight();
+      };
+
+      var lbl = document.createElement('span');
+      lbl.textContent = pn;
+
+      var cv = document.createElement('canvas');
+      cv.style.cssText = 'width:140px;height:98px;background:#555;border-radius:3px;';
+      item.appendChild(cv);
+      item.appendChild(lbl);
+      list.appendChild(item);
+
+      (function(cvEl, pageNum){
+        var rendered = false;
+        var obs = new IntersectionObserver(function(entries){
+          if(entries[0].isIntersecting && !rendered){
+            rendered = true; obs.disconnect();
+            (async function(){
+              try {
+                var pg  = await sPjs.getPage(pageNum);
+                var vp0 = pg.getViewport({scale:1, rotation:sRot[pageNum]||0});
+                var sc  = 140 / vp0.width;
+                var vp  = pg.getViewport({scale: sc * 2, rotation: sRot[pageNum]||0});
+                cvEl.width  = vp.width;
+                cvEl.height = vp.height;
+                cvEl.style.width  = '140px';
+                cvEl.style.height = Math.round(vp0.height * sc) + 'px';
+                cvEl.style.background = 'transparent';
+                await pg.render({canvasContext: cvEl.getContext('2d'), viewport: vp}).promise;
+              } catch(e){}
+            })();
+          }
+        },{root: list, rootMargin:'200px'});
+        obs.observe(cvEl);
+      })(cv, pn);
+    });
   }
-  document.addEventListener('keydown',function(e){
-    if(!document.getElementById('povl').classList.contains('on'))return;
-    if(e.key==='ArrowLeft')navPv(-1); if(e.key==='ArrowRight')navPv(1); if(e.key==='Escape')closePv();
+
+  
+  function pvSbHighlight() {
+    if(!pvSbOpen) return;
+    document.querySelectorAll('.pv-sb-item').forEach(function(el){
+      var isActive = parseInt(el.dataset.idx) === sPvI;
+      el.classList.toggle('cur', isActive);
+      if(isActive) el.scrollIntoView({block:'nearest', behavior:'smooth'});
+    });
+  }
+
+  
+  var _pvSlotObs = null;
+  var _pvPageVp0 = null;
+
+  async function pvRender() {
+    if(!sPjs || pvRendering) return;
+    pvRendering = true;
+    var wrap = document.getElementById('pv-canvas-wrap');
+    var pvs  = document.getElementById('pvs');
+
+    try {
+      var firstPg = await sPjs.getPage(sOrd[0] || 1);
+      _pvPageVp0 = firstPg.getViewport({ scale: 1 });
+
+      var avW = pvs.clientWidth - 80;
+      var avH = pvs.clientHeight - 60;
+      pvFitSc = Math.min(avW / _pvPageVp0.width, avH / _pvPageVp0.height);
+      var dispSc = pvFitSc * pvZoom;
+      var renderSc = dispSc * 2;
+
+      if(_pvSlotObs) { _pvSlotObs.disconnect(); _pvSlotObs = null; }
+
+      wrap.innerHTML = '';
+      sOrd.forEach(function(pn, idx) {
+        var rot = sRot[pn] || 0;
+        var isTurned = (rot === 90 || rot === 270);
+        var baseW = isTurned ? _pvPageVp0.height : _pvPageVp0.width;
+        var baseH = isTurned ? _pvPageVp0.width  : _pvPageVp0.height;
+
+        var slot = document.createElement('div');
+        slot.className = 'pv-page-slot';
+        slot.id = 'pv-slot-' + idx;
+        slot.dataset.idx = idx;
+        slot.dataset.pn  = pn;
+        slot.style.width  = Math.round(baseW * dispSc) + 'px';
+        slot.style.height = Math.round(baseH * dispSc) + 'px';
+        slot.innerHTML = '<div class="pv-slot-loading">Page ' + pn + '</div>';
+        wrap.appendChild(slot);
+      });
+
+      _pvSlotObs = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if(entry.isIntersecting) {
+            renderSlotPage(entry.target, renderSc);
+          }
+        });
+      }, { root: pvs, rootMargin: '600px 0px' });
+
+      document.querySelectorAll('.pv-page-slot').forEach(function(el) {
+        _pvSlotObs.observe(el);
+      });
+
+      pvs.onscroll = function() {
+        var pvsRect = pvs.getBoundingClientRect();
+        var midY = pvsRect.top + pvsRect.height * 0.35;
+        var slots = document.querySelectorAll('.pv-page-slot');
+        for(var i = 0; i < slots.length; i++) {
+          var r = slots[i].getBoundingClientRect();
+          if(r.top <= midY && r.bottom >= midY) {
+            var idx = parseInt(slots[i].dataset.idx);
+            var pn  = parseInt(slots[i].dataset.pn);
+            if(sPvI !== idx) {
+              sPvI = idx;
+              var pgInp = document.getElementById('pv-pg-inp');
+              if(pgInp && document.activeElement !== pgInp) pgInp.value = pn;
+              pvSbHighlight();
+            }
+            break;
+          }
+        }
+      };
+
+      setTimeout(function() {
+        var targetSlot = document.getElementById('pv-slot-' + sPvI);
+        if(targetSlot) targetSlot.scrollIntoView({ block: 'center' });
+      }, 40);
+
+      var pgInp  = document.getElementById('pv-pg-inp');
+      var zoomEl = document.getElementById('pv-zoom-lbl');
+      var totEl  = document.getElementById('pv-total');
+      var fnEl   = document.getElementById('pv-fn');
+      if(pgInp)  pgInp.value = sOrd[sPvI] || 1;
+      if(totEl)  totEl.textContent = '/ ' + sOrd.length;
+      if(zoomEl && document.activeElement !== zoomEl)
+                 zoomEl.value = Math.round(pvZoom * 100) + '%';
+      if(fnEl && sFn) fnEl.textContent = sFn + '.pdf';
+      pvSbHighlight();
+
+    } catch(e) {
+      wrap.innerHTML = '<div style="color:#ef4444;padding:40px">Error: ' + e.message + '</div>';
+    }
+    pvRendering = false;
+  }
+
+  async function renderSlotPage(slotEl, renderSc) {
+    if(slotEl.dataset.renderedSc === String(renderSc)) return;
+    var pn = parseInt(slotEl.dataset.pn);
+    try {
+      var pg = await sPjs.getPage(pn);
+      var rot = sRot[pn] || 0;
+      var vp = pg.getViewport({ scale: renderSc, rotation: rot });
+      var cv = document.createElement('canvas');
+      cv.width = vp.width;
+      cv.height = vp.height;
+      await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      slotEl.innerHTML = '';
+      slotEl.appendChild(cv);
+      slotEl.dataset.renderedSc = String(renderSc);
+    } catch(e) {
+      console.error('Error rendering page ' + pn, e);
+    }
+  }
+
+  function pvUpdateZoom() {
+    if(!_pvPageVp0) { pvRender(); return; }
+    var dispSc = pvFitSc * pvZoom;
+    var renderSc = dispSc * 2;
+    var zoomEl = document.getElementById('pv-zoom-lbl');
+    if(zoomEl && document.activeElement !== zoomEl) zoomEl.value = Math.round(pvZoom * 100) + '%';
+
+    var pvs = document.getElementById('pvs');
+    var pvsH = pvs ? pvs.clientHeight : window.innerHeight;
+
+    document.querySelectorAll('.pv-page-slot').forEach(function(slot) {
+      var pn = parseInt(slot.dataset.pn);
+      var rot = sRot[pn] || 0;
+      var isTurned = (rot === 90 || rot === 270);
+      var baseW = isTurned ? _pvPageVp0.height : _pvPageVp0.width;
+      var baseH = isTurned ? _pvPageVp0.width  : _pvPageVp0.height;
+
+      slot.style.width  = Math.round(baseW * dispSc) + 'px';
+      slot.style.height = Math.round(baseH * dispSc) + 'px';
+      delete slot.dataset.renderedSc;
+
+
+      var r = slot.getBoundingClientRect();
+      if(r.bottom >= -400 && r.top <= pvsH + 400) {
+        renderSlotPage(slot, renderSc);
+      }
+    });
+  }
+
+  
+  window.pvZoomIn  = function(){ pvZoom = Math.min(5.0, pvZoom * 1.2); pvUpdateZoom(); };
+  window.pvZoomOut = function(){ pvZoom = Math.max(0.2, pvZoom / 1.2); pvUpdateZoom(); };
+  window.pvZoomFit = function(){ pvZoom = 1.0; pvUpdateZoom(); };
+
+  window.pvSetZoomPct = function(val) {
+    var pct = parseFloat(String(val).replace('%',''));
+    if(isNaN(pct) || pct <= 0) return;
+    pvZoom = Math.min(5.0, Math.max(0.2, pct / 100));
+    pvUpdateZoom();
+  };
+
+  
+  window.pvGoPage = function(val) {
+    var n = parseInt(val);
+    if(isNaN(n)) return;
+    var idx = sOrd.indexOf(n);
+    if(idx === -1) idx = Math.max(0, Math.min(sOrd.length - 1, n - 1));
+    sPvI = idx;
+    var slot = document.getElementById('pv-slot-' + idx);
+    if(slot) slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    var pgInp = document.getElementById('pv-pg-inp');
+    if(pgInp) pgInp.value = sOrd[sPvI];
+    pvSbHighlight();
+  };
+
+  
+  window.navPv = function(d) {
+    var n = sPvI + d;
+    if(n >= 0 && n < sOrd.length) {
+      sPvI = n;
+      var slot = document.getElementById('pv-slot-' + n);
+      if(slot) slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      var pgInp = document.getElementById('pv-pg-inp');
+      if(pgInp) pgInp.value = sOrd[sPvI];
+      pvSbHighlight();
+    }
+  };
+
+  
+  window.pvRotate = function() {
+    if(!sPvI && sPvI !== 0) return;
+    var pn = sOrd[sPvI];
+    sRot[pn] = ((sRot[pn] || 0) + 90) % 360;
+    var slot = document.getElementById('pv-slot-' + sPvI);
+    if(slot) {
+      var rot = sRot[pn] || 0;
+      var isTurned = (rot === 90 || rot === 270);
+      var baseW = isTurned ? _pvPageVp0.height : _pvPageVp0.width;
+      var baseH = isTurned ? _pvPageVp0.width  : _pvPageVp0.height;
+      var dispSc = pvFitSc * pvZoom;
+      slot.style.width  = Math.round(baseW * dispSc) + 'px';
+      slot.style.height = Math.round(baseH * dispSc) + 'px';
+      delete slot.dataset.renderedSc;
+      renderSlotPage(slot, dispSc * 2);
+    }
+    renderGrid();
+    if(pvSbOpen) pvRenderSidebar();
+  };
+
+  
+  window.pvDeleteCurrentPage = function() {
+    if(!sPdf || !sOrd.length || sPvI < 0 || sPvI >= sOrd.length) return;
+    var pn = sOrd[sPvI];
+    pushUndo();
+
+    sOrd.splice(sPvI, 1);
+    sSel.delete(pn);
+    sDel.delete(pn);
+    sCuts.delete(pn);
+    delete sRot[pn];
+    delete cGrpAssign[pn];
+
+    toast('🗑️ Deleted Page ' + pn + ' · Ctrl+Z to undo', 'ok');
+
+    if(sOrd.length === 0) {
+      closePv();
+      renderGrid();
+      updSel();
+      return;
+    }
+
+    if(sPvI >= sOrd.length) sPvI = sOrd.length - 1;
+    pvZoom = 1.0;
+    pvRender();
+    if(pvSbOpen) pvRenderSidebar();
+    renderGrid();
+    updSel();
+  };
+
+  
+  window.pvWheel = function(e) {
+    if(e.ctrlKey) {
+      e.preventDefault();
+      var delta = e.deltaY < 0 ? 1.15 : 1/1.15;
+      pvZoom = Math.min(5.0, Math.max(0.2, pvZoom * delta));
+      pvUpdateZoom();
+    }
+  };
+
+
+  
+  var undoStack = [];
+  function pushUndo() {
+    undoStack.push({
+      ord: sOrd.slice(),
+      rot: Object.assign({}, sRot),
+      del: new Set(sDel),
+      grp: Object.assign({}, cGrpAssign)
+    });
+    if(undoStack.length > 25) undoStack.shift(); // keep max 25 states
+  }
+  function doUndo() {
+    if(!undoStack.length){ toast('Nothing to undo','err'); return; }
+    var s=undoStack.pop();
+    sOrd=s.ord; sRot=s.rot; sDel=s.del; cGrpAssign=s.grp;
+    renderGrid(); updSel();
+    if(sMode==='del') updDel();
+    var pvOpen = document.getElementById('povl').classList.contains('on');
+    if(pvOpen && sOrd.length > 0) {
+      if(sPvI >= sOrd.length) sPvI = sOrd.length - 1;
+      pvRender();
+      if(pvSbOpen) pvRenderSidebar();
+    }
+    toast('↩ Undone  (' + undoStack.length + ' step'+(undoStack.length!==1?'s':'')+ ' remaining)','ok');
+  }
+
+  
+  document.addEventListener('keydown', function(e) {
+    var pvOpen    = document.getElementById('povl').classList.contains('on');
+    var modalOpen = document.getElementById('modal').classList.contains('on');
+    var ae        = document.activeElement;
+    var tag       = ae ? ae.tagName.toUpperCase() : '';
+    var inField   = (tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') ||
+                    (ae && ae.isContentEditable);
+
+    
+    if(e.key==='Escape') {
+      if(pvOpen)    { closePv();    return; }
+      if(modalOpen) { closeModal(); return; }
+    }
+
+    
+    if(pvOpen) {
+      if(!inField) {
+        if(e.key==='Delete' || e.key==='Backspace') {
+          e.preventDefault();
+          pvDeleteCurrentPage();
+          return;
+        }
+        if(e.ctrlKey && e.key==='z') {
+          e.preventDefault();
+          doUndo();
+          return;
+        }
+      }
+      if(e.key==='ArrowLeft')                                        { navPv(-1); return; }
+      if(e.key==='ArrowRight')                                       { navPv(1);  return; }
+      if(e.ctrlKey && (e.key==='+' || e.key==='=' || e.key===']'))  { e.preventDefault(); pvZoomIn();  return; }
+      if(e.ctrlKey && (e.key==='-' || e.key==='['))                  { e.preventDefault(); pvZoomOut(); return; }
+      if(e.ctrlKey && e.key==='0')                                   { e.preventDefault(); pvZoomFit(); return; }
+      return; // no other shortcuts inside viewer
+    }
+
+    
+    if(inField || modalOpen || !sPdf) return;
+
+    
+    if(e.ctrlKey && e.key==='a') {
+      e.preventDefault();
+      selAll();
+      toast('All ' + sOrd.length + ' pages selected · Ctrl+Z to undo', 'ok');
+      return;
+    }
+
+    
+    if(e.ctrlKey && e.key==='z') {
+      e.preventDefault();
+      doUndo();
+      return;
+    }
+
+    
+    if(e.key==='Delete' || e.key==='Backspace') {
+      if(sSel.size === 0) return;         // nothing selected — do nothing
+      e.preventDefault();                 // stop Backspace from going back in browser history
+      pushUndo();
+      var count = sSel.size;
+      sSel.forEach(function(pn) {
+        var idx = sOrd.indexOf(pn);
+        if(idx !== -1) sOrd.splice(idx, 1);
+        sDel.delete(pn);
+      });
+      toast('Deleted ' + count + ' page' + (count > 1 ? 's' : '') + ' · Ctrl+Z to undo', 'ok');
+      sSel.clear();
+      updSel();
+      renderGrid();
+      return;
+    }
   });
 
-  /* ════════════════════════════════════════════════════
-     MERGE
-     ════════════════════════════════════════════════════ */
+  
+  var zoomPx = 108;
+  window.setZoom = function(v) {
+    zoomPx = parseInt(v);
+    document.getElementById('zoom-val').textContent = v + 'px';
+    var grid = document.getElementById('pgrid');
+    if(sMode !== 'grp') { // grp mode uses flex layout — skip
+      grid.style.gridTemplateColumns = 'repeat(auto-fill,minmax('+v+'px,1fr))';
+    }
+  };
+
+  
+  window.jumpTo = function(val) {
+    var pn = parseInt(val);
+    if(!pn || isNaN(pn)) { toast('Enter a page number','err'); return; }
+    var el = document.querySelector('.pg[data-pn="'+pn+'"]');
+    if(el) {
+      el.scrollIntoView({behavior:'smooth', block:'center'});
+      el.classList.add('jmp-hl');
+      setTimeout(function(){ el.classList.remove('jmp-hl'); }, 1500);
+      toast('Jumped to page '+pn,'ok');
+    } else {
+      toast('Page '+pn+' not found in current view','err');
+    }
+  };
+
+  
+  window.doExtractRange = async function() {
+    if(!ok()||!sPdf) return;
+    var from=parseInt(document.getElementById('rfrom').value)||1;
+    var to  =parseInt(document.getElementById('rto').value)||1;
+    if(from>to){ toast('From must be ≤ To','err'); return; }
+
+    var pages=sOrd.filter(function(p){ return p>=from && p<=to; });
+    if(!pages.length){ toast('No pages found in range '+from+'–'+to,'err'); return; }
+    var nd=await PDFLib.PDFDocument.create();
+    for(var i=0;i<pages.length;i++){
+      var c=await nd.copyPages(sPdf,[pages[i]-1]);
+      if(sRot[pages[i]])c[0].setRotation(PDFLib.degrees(sRot[pages[i]]));
+      nd.addPage(c[0]);
+    }
+    var base=(document.getElementById('s-outname').value.trim()||sFn);
+    dl(await nd.save(), base+'_p'+from+(from!==to?'-'+to:'')+'.pdf');
+    toast('Extracted pages '+from+'–'+to+' ('+pages.length+' pages)','ok');
+  };
+
+  
   var mFs=[];
   window.evMerge = function(e){ e.preventDefault(); udg('mdrop'); var fs=Array.from(e.dataTransfer.files).filter(function(f){return f.type==='application/pdf';}); if(fs.length)addMerge(fs); else toast('Drop PDF files','err'); };
   window.addMerge = async function(files) {
@@ -1263,11 +2197,21 @@ window.addEventListener('load', function() {
     } catch(e){toast('Merge error: '+e.message,'err');}
     btn.innerHTML='🔗 Merge &amp; Download'; btn.disabled=false;
   };
+  window.previewMergedPdf = async function() {
+    if(!ok()||mFs.length<2){toast('Add at least 2 PDFs to merge','err');return;}
+    var fname=(document.getElementById('m-outname').value.trim()||'merged')+'.pdf';
+    var btn=document.getElementById('b-merge-prev'); btn.innerHTML='<span class="sp"></span> Merging…'; btn.disabled=true;
+    try {
+      var out=await PDFLib.PDFDocument.create();
+      for(var i=0;i<mFs.length;i++){var d=await PDFLib.PDFDocument.load(mFs[i].ab);var pgs=await out.copyPages(d,d.getPageIndices());pgs.forEach(function(p){out.addPage(p);});}
+      var bytes=await out.save();
+      await openPvCustom(bytes, fname, function(){ dl(bytes, fname); toast('Downloaded '+fname,'ok'); });
+    } catch(e){toast('Preview error: '+e.message,'err');}
+    btn.innerHTML='👁️ Preview Full Screen'; btn.disabled=false;
+  };
   window.resetMerge = function() { mFs=[]; document.getElementById('mlist').innerHTML=''; document.getElementById('mcard').style.display='none'; document.getElementById('mdrop').style.display='block'; };
 
-  /* ════════════════════════════════════════════════════
-     TOOLS — shared
-     ════════════════════════════════════════════════════ */
+  
   var tF={c:null,n:null,a:null};
   var cQ='m', nSz='a4', nFit='c', iSz='a4', iFit='c', aSens='m';
   var aSegs=[], imgFs=[];
@@ -1280,7 +2224,7 @@ window.addEventListener('load', function() {
   window.tld = async function(k,file) {
     if(!file)return;
     var ab=await file.arrayBuffer();
-    var bytes=new Uint8Array(ab); // store as Uint8Array — never detaches
+    var bytes=new Uint8Array(ab);
     tF[k]={file:file,bytes:bytes,size:file.size};
     document.getElementById(k+'-dw').style.display='none';
     document.getElementById(k+'-lw').style.display='block';
@@ -1289,7 +2233,9 @@ window.addEventListener('load', function() {
     if(k==='a'){
       document.getElementById('ba-an').disabled=false;
       document.getElementById('ba-sp').disabled=true;
-      document.getElementById('a-prev').style.display='none'; aSegs=[];
+      document.getElementById('ba-sp').style.display='none';
+      var bSing=document.getElementById('ba-single'); if(bSing){ bSing.disabled=true; bSing.style.display='none'; }
+      document.getElementById('a-prev').style.display='none'; aSegs=[]; aBlanks=[]; aNonBlanks=[];
     } else {
       document.getElementById('b'+k).disabled=false;
     }
@@ -1299,13 +2245,19 @@ window.addEventListener('load', function() {
     tF[k]=null;
     document.getElementById(k+'-dw').style.display='block';
     document.getElementById(k+'-lw').style.display='none';
-    if(k==='a'){document.getElementById('ba-an').disabled=true;document.getElementById('ba-sp').disabled=true;document.getElementById('a-prev').style.display='none';aSegs=[];}
+    if(k==='a'){
+      document.getElementById('ba-an').disabled=true;
+      document.getElementById('ba-sp').disabled=true;
+      document.getElementById('ba-sp').style.display='none';
+      var bSing=document.getElementById('ba-single'); if(bSing){ bSing.disabled=true; bSing.style.display='none'; }
+      document.getElementById('a-prev').style.display='none'; aSegs=[]; aBlanks=[]; aNonBlanks=[];
+    }
     else document.getElementById('b'+k).disabled=true;
     var r=document.getElementById(k+'-res'); if(r)r.style.display='none';
     var p=document.getElementById(k+'-prg'); if(p)p.classList.remove('on');
   };
 
-  /* Chip setters */
+  
   window.setQ  = function(q){ cQ=q; ['l','m','h'].forEach(function(x){document.getElementById('cq-'+x).classList.toggle('on',x===q);}); };
   window.setNS = function(s){ nSz=s; ['a4','lt','a3','lg','sq','1st'].forEach(function(x){document.getElementById('ns-'+x).classList.toggle('on',x===s);}); };
   window.setNF = function(f){ nFit=f; ['c','s','r'].forEach(function(x){document.getElementById('nf-'+x).classList.toggle('on',x===f);}); };
@@ -1313,42 +2265,133 @@ window.addEventListener('load', function() {
   window.setIF = function(f){ iFit=f; ['c','f','o'].forEach(function(x){document.getElementById('if-'+x).classList.toggle('on',x===f);}); };
   window.setAS = function(s){ aSens=s; ['l','m','h'].forEach(function(x){document.getElementById('aq-'+x).classList.toggle('on',x===s);}); };
 
-  /* ── Compress (structural — no quality loss) ── */
+  
   window.doCompress = async function() {
-    if(!ok()||!tF.c)return;
-    var tf=tF.c, btn=document.getElementById('bc'), prg=document.getElementById('c-prg');
-    btn.innerHTML='<span class="sp"></span> Compressing…'; btn.disabled=true; prg.classList.add('on');
-    document.getElementById('c-bar').style.width='15%';
-    document.getElementById('c-txt').textContent='Loading PDF…';
+    if(!ok() || !tF.c) return;
+    var tf = tF.c, btn = document.getElementById('bc'), prg = document.getElementById('c-prg');
+    btn.innerHTML = '<span class="sp"></span> Compressing…'; btn.disabled = true; prg.classList.add('on');
+    document.getElementById('c-bar').style.width = '10%';
+    document.getElementById('c-txt').textContent = 'Analyzing PDF…';
+
     try {
-      var doc=await PDFLib.PDFDocument.load(tf.bytes.slice(0),{ignoreEncryption:true});
-      document.getElementById('c-bar').style.width='45%';
-      document.getElementById('c-txt').textContent='Cleaning unused objects…';
-      await slp(40);
-      if(cQ==='h'){
-        try{
+      var outBytes;
+
+      if(cQ === 'l') {
+
+        document.getElementById('c-bar').style.width = '40%';
+        document.getElementById('c-txt').textContent = 'Cleaning unused objects & metadata…';
+        await slp(30);
+        var doc = await PDFLib.PDFDocument.load(tf.bytes.slice(0), { ignoreEncryption: true });
+        try {
           ['Producer','Creator','CreationDate','ModDate'].forEach(function(mk){
             try{ doc.getInfoDict().delete(PDFLib.PDFName.of(mk)); }catch(e){}
           });
-        }catch(e){}
+        } catch(e){}
+        document.getElementById('c-bar').style.width = '75%';
+        document.getElementById('c-txt').textContent = 'Saving with object streams…';
+        await slp(30);
+        outBytes = await doc.save({ useObjectStreams: true, addDefaultPage: false, objectsPerTick: 50 });
+      } else {
+
+        var pj = await pdfjsLib.getDocument({ data: new Uint8Array(tf.bytes) }).promise;
+        var numPages = pj.numPages;
+        var targetDpi = (cQ === 'h') ? 96 : 125;
+        var jpgQuality = (cQ === 'h') ? 0.58 : 0.72;
+        var scale = targetDpi / 72;
+
+        var dstDoc = await PDFLib.PDFDocument.create();
+
+        for(var i = 1; i <= numPages; i++) {
+          var pct = Math.round((i / numPages) * 85);
+          document.getElementById('c-bar').style.width = pct + '%';
+          document.getElementById('c-txt').textContent = 'Optimizing page ' + i + ' of ' + numPages + '…';
+
+          var pg = await pj.getPage(i);
+          var vp0 = pg.getViewport({ scale: 1 });
+          var vp = pg.getViewport({ scale: scale });
+
+          var cv = document.createElement('canvas');
+          cv.width = Math.ceil(vp.width);
+          cv.height = Math.ceil(vp.height);
+          var ctx = cv.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, cv.width, cv.height);
+
+          await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+
+          var dataUrl = cv.toDataURL('image/jpeg', jpgQuality);
+          var binStr = atob(dataUrl.split(',')[1]);
+          var len = binStr.length;
+          var imgBytes = new Uint8Array(len);
+          for(var k = 0; k < len; k++) {
+            imgBytes[k] = binStr.charCodeAt(k);
+          }
+
+          var jpgImg = await dstDoc.embedJpg(imgBytes);
+          var newPage = dstDoc.addPage([vp0.width, vp0.height]);
+          newPage.drawImage(jpgImg, {
+            x: 0,
+            y: 0,
+            width: vp0.width,
+            height: vp0.height
+          });
+          await slp(5);
+        }
+
+        document.getElementById('c-bar').style.width = '95%';
+        document.getElementById('c-txt').textContent = 'Finalizing compressed PDF…';
+        outBytes = await dstDoc.save({ useObjectStreams: true, addDefaultPage: false });
+
+
+        if(outBytes.byteLength >= tf.size) {
+          var fallbackDoc = await PDFLib.PDFDocument.load(tf.bytes.slice(0), { ignoreEncryption: true });
+          var structBytes = await fallbackDoc.save({ useObjectStreams: true });
+          if(structBytes.byteLength < outBytes.byteLength) {
+            outBytes = structBytes;
+          }
+        }
       }
-      document.getElementById('c-bar').style.width='75%';
-      document.getElementById('c-txt').textContent='Saving with compression…';
-      await slp(40);
-      var out=await doc.save({useObjectStreams:true,addDefaultPage:false,objectsPerTick:50});
-      document.getElementById('c-bar').style.width='100%';
-      var pct=Math.round((1-out.byteLength/tf.size)*100);
-      document.getElementById('c-bef').textContent=fmt(tf.size);
-      document.getElementById('c-aft').textContent=fmt(out.byteLength);
-      document.getElementById('c-pct').textContent=pct>0?'▼ '+pct+'% saved':'Already optimized';
-      document.getElementById('c-res').style.display='flex';
-      dl(out,tf.file.name.replace(/\.pdf$/i,'')+'_compressed.pdf');
-      toast(pct>0?'Compressed! '+fmt(tf.size)+' → '+fmt(out.byteLength):'File was already optimized','ok');
-    } catch(e){toast('Error: '+e.message,'err');console.error(e);}
-    prg.classList.remove('on'); btn.innerHTML='🗂️ Compress &amp; Download'; btn.disabled=false;
+
+      document.getElementById('c-bar').style.width = '100%';
+      var saved = Math.round((1 - outBytes.byteLength / tf.size) * 100);
+      document.getElementById('c-bef').textContent = fmt(tf.size);
+      document.getElementById('c-aft').textContent = fmt(outBytes.byteLength);
+      document.getElementById('c-pct').textContent = saved > 0 ? '▼ ' + saved + '% saved' : 'Already optimal';
+      document.getElementById('c-res').style.display = 'flex';
+
+      lastCompressedBytes = outBytes;
+      lastCompressedName  = tf.file.name.replace(/\.pdf$/i, '') + '_compressed.pdf';
+      var actRow = document.getElementById('c-act-btns');
+      if(actRow) actRow.style.display = 'flex';
+
+      toast(saved > 0 ? 'Compressed! ' + fmt(tf.size) + ' → ' + fmt(outBytes.byteLength) + ' (' + saved + '% saved) — Click Preview to check!' : 'Optimized!', 'ok');
+    } catch(e) {
+      toast('Error: ' + e.message, 'err');
+      console.error(e);
+    }
+    prg.classList.remove('on');
+    btn.innerHTML = '🗂️ Re-Compress';
+    btn.disabled = false;
   };
 
-  /* ── Normalize ── */
+  var lastCompressedBytes = null;
+  var lastCompressedName  = '';
+
+  window.previewCompressedPdf = function() {
+    if(!lastCompressedBytes) return;
+    openPvCustom(lastCompressedBytes, lastCompressedName, function() {
+      dl(lastCompressedBytes, lastCompressedName);
+      toast('Downloaded ' + lastCompressedName, 'ok');
+    });
+  };
+
+  window.downloadCompressedPdf = function() {
+    if(!lastCompressedBytes) return;
+    dl(lastCompressedBytes, lastCompressedName);
+    toast('Downloaded ' + lastCompressedName, 'ok');
+  };
+
+  
   window.doNorm = async function() {
     if(!ok()||!tF.n)return;
     var tf=tF.n, btn=document.getElementById('bn'), prg=document.getElementById('n-prg');
@@ -1375,7 +2418,7 @@ window.addEventListener('load', function() {
     prg.classList.remove('on'); btn.innerHTML='📐 Normalize &amp; Download'; btn.disabled=false;
   };
 
-  /* ── Images → PDF ── */
+  
   window.evImgs = function(e){e.preventDefault();udg('i-drop');var fs=Array.from(e.dataTransfer.files).filter(function(f){return f.type.startsWith('image/');});if(fs.length)addImgs(fs);else toast('Drop image files','err');};
   window.addImgs = async function(files) {
     for(var i=0;i<files.length;i++){
@@ -1432,44 +2475,212 @@ window.addEventListener('load', function() {
     prg.classList.remove('on'); btn.innerHTML='🖼️ Convert to PDF'; btn.disabled=imgFs.length===0;
   };
 
-  /* ── Smart Auto-Split ── */
-  var SENTH={l:.98,m:.92,h:.80};
+  
+  var SENTH = { l: 0.98, m: 0.92, h: 0.80 };
+  var aBlanks = [];
+  var aNonBlanks = [];
+
   window.doAnalyze = async function() {
-    if(!ok()||!tF.a)return;
-    var tf=tF.a,btn=document.getElementById('ba-an'),prg=document.getElementById('a-prg');
-    btn.innerHTML='<span class="sp"></span> Analyzing…'; btn.disabled=true; prg.classList.add('on');
+    if(!ok() || !tF.a) return;
+    var tf = tF.a, btn = document.getElementById('ba-an'), prg = document.getElementById('a-prg');
+    btn.innerHTML = '<span class="sp"></span> Analyzing pages…'; btn.disabled = true; prg.classList.add('on');
     try {
-      var pj=await pdfjsLib.getDocument({data:new Uint8Array(tf.ab)}).promise, n=pj.numPages, th=SENTH[aSens], blanks=[];
-      for(var i=1;i<=n;i++){
-        document.getElementById('a-bar').style.width=Math.round(i/n*100)+'%';
-        document.getElementById('a-txt').textContent='Analyzing page '+i+' of '+n;
-        var pg=await pj.getPage(i), vp=pg.getViewport({scale:.18});
-        var cv2=document.createElement('canvas'); cv2.width=Math.ceil(vp.width); cv2.height=Math.ceil(vp.height);
-        var ctx2=cv2.getContext('2d'); await pg.render({canvasContext:ctx2,viewport:vp}).promise;
-        var d=ctx2.getImageData(0,0,cv2.width,cv2.height).data, wc=0;
-        for(var p=0;p<d.length;p+=4){if(d[p]>230&&d[p+1]>230&&d[p+2]>230)wc++;}
-        if(wc/(d.length/4)>=th)blanks.push(i); await slp(2);
+      var pj = await pdfjsLib.getDocument({ data: new Uint8Array(tf.bytes) }).promise;
+      var n = pj.numPages, th = SENTH[aSens], blanks = [], nonBlanks = [];
+      var blankThumbs = [];
+
+      for(var i = 1; i <= n; i++) {
+        document.getElementById('a-bar').style.width = Math.round(i / n * 100) + '%';
+        document.getElementById('a-txt').textContent = 'Analyzing page ' + i + ' of ' + n + '…';
+        var pg = await pj.getPage(i);
+        var vp = pg.getViewport({ scale: 0.22 });
+        var cv2 = document.createElement('canvas');
+        cv2.width = Math.ceil(vp.width);
+        cv2.height = Math.ceil(vp.height);
+        var ctx2 = cv2.getContext('2d');
+        ctx2.fillStyle = '#ffffff';
+        ctx2.fillRect(0, 0, cv2.width, cv2.height);
+        await pg.render({ canvasContext: ctx2, viewport: vp }).promise;
+
+        var d = ctx2.getImageData(0, 0, cv2.width, cv2.height).data, wc = 0;
+        for(var p = 0; p < d.length; p += 4) {
+          if(d[p] > 230 && d[p+1] > 230 && d[p+2] > 230) wc++;
+        }
+        var whiteRatio = wc / (d.length / 4);
+        if(whiteRatio >= th) {
+          blanks.push(i);
+          blankThumbs.push({ pn: i, cv: cv2, ratio: Math.round(whiteRatio * 100) });
+        } else {
+          nonBlanks.push(i);
+        }
+        await slp(2);
       }
-      var segs=[],start=1;
-      blanks.sort(function(a,b){return a-b;}).forEach(function(bp){if(bp-1>=start)segs.push({from:start,to:bp-1});start=bp+1;});
-      if(start<=n)segs.push({from:start,to:n});
-      aSegs=segs;
-      var list=document.getElementById('a-segs'); list.innerHTML='';
-      if(!segs.length){list.innerHTML='<div class="seg">ℹ️ No blank separator pages found. Try higher sensitivity.</div>';}
-      else{segs.forEach(function(s,i){var el=document.createElement('div');el.className='seg';el.innerHTML='<span style="font-size:16px">📄</span><div><div>Segment '+(i+1)+' — '+(s.to-s.from+1)+' page'+(s.to-s.from+1!==1?'s':'')+'</div><div class="seg-s">Pages '+s.from+'–'+s.to+'</div></div>';list.appendChild(el);});}
-      document.getElementById('a-note').textContent=blanks.length?blanks.length+' blank page(s) detected (pg '+blanks.join(', ')+') — excluded from output.':'No blank pages detected.';
-      document.getElementById('a-prev').style.display='block';
-      document.getElementById('ba-sp').disabled=segs.length===0;
-      toast(segs.length?'Found '+segs.length+' segment'+(segs.length!==1?'s':''):'No separators found','ok');
-    } catch(e){toast('Error: '+e.message,'err');console.error(e);}
-    prg.classList.remove('on'); btn.innerHTML='🔍 Analyze &amp; Preview Splits'; btn.disabled=false;
+
+      aBlanks = blanks;
+      aNonBlanks = nonBlanks;
+
+      var segs = [], start = 1;
+      blanks.sort(function(a,b){ return a - b; }).forEach(function(bp) {
+        if(bp - 1 >= start) segs.push({ from: start, to: bp - 1 });
+        start = bp + 1;
+      });
+      if(start <= n) segs.push({ from: start, to: n });
+      aSegs = segs;
+
+
+      var thumbWrap = document.getElementById('a-blank-thumbs');
+      thumbWrap.innerHTML = '';
+      if(blanks.length > 0) {
+        blankThumbs.forEach(function(item) {
+          var card = document.createElement('div');
+          card.className = 'a-blk-card';
+          card.style.cursor = 'pointer';
+          card.title = 'Click to inspect Page ' + item.pn + ' in full screen (' + item.ratio + '% blank)';
+          card.onclick = function() { previewSpecificPage(item.pn); };
+          card.appendChild(item.cv);
+          var badge = document.createElement('span');
+          badge.className = 'a-blk-badge';
+          badge.textContent = 'Blank';
+          var num = document.createElement('span');
+          num.className = 'a-blk-num';
+          num.innerHTML = 'Page ' + item.pn + ' <span style="font-size:9px">👁️</span>';
+          card.appendChild(badge);
+          card.appendChild(num);
+          thumbWrap.appendChild(card);
+        });
+        document.getElementById('a-blank-prev-box').style.display = 'block';
+      } else {
+        document.getElementById('a-blank-prev-box').style.display = 'none';
+      }
+
+
+      var list = document.getElementById('a-segs');
+      list.innerHTML = '';
+      if(!segs.length) {
+        list.innerHTML = '<div class="seg">ℹ️ No segments found. Try higher sensitivity.</div>';
+      } else {
+        segs.forEach(function(s, i) {
+          var el = document.createElement('div');
+          el.className = 'seg';
+          el.innerHTML = '<span style="font-size:16px">📄</span><div><div>Segment ' + (i+1) + ' — ' + (s.to - s.from + 1) + ' page' + (s.to - s.from + 1 !== 1 ? 's' : '') + '</div><div class="seg-s">Pages ' + s.from + '–' + s.to + '</div></div>';
+          list.appendChild(el);
+        });
+      }
+
+
+      var noteEl = document.getElementById('a-note');
+      if(blanks.length) {
+        noteEl.innerHTML = '<strong style="color:#ef4444">⚠️ ' + blanks.length + ' Blank Page' + (blanks.length > 1 ? 's' : '') + ' Detected:</strong> Page(s) ' + blanks.join(', ') + '<br/><span style="color:var(--mut);font-weight:400">' + nonBlanks.length + ' content page' + (nonBlanks.length !== 1 ? 's' : '') + ' will be kept in clean output.</span>';
+      } else {
+        noteEl.innerHTML = '<strong style="color:#10b981">✅ No Blank Pages Detected</strong> — entire document has content on all ' + n + ' pages.';
+      }
+
+      document.getElementById('a-prev').style.display = 'block';
+
+
+      var btnPrev   = document.getElementById('ba-prev-clean');
+      var btnSingle = document.getElementById('ba-single');
+      var btnSplit  = document.getElementById('ba-sp');
+      if(blanks.length > 0 && nonBlanks.length > 0) {
+        if(btnPrev) {
+          btnPrev.style.display = 'inline-flex';
+          btnPrev.disabled = false;
+        }
+        btnSingle.style.display = 'inline-flex';
+        btnSingle.disabled = false;
+        btnSingle.innerHTML = '📄 Download Single PDF (No Blanks — ' + nonBlanks.length + ' pgs)';
+      } else {
+        if(btnPrev) btnPrev.style.display = 'none';
+        btnSingle.style.display = 'none';
+      }
+      btnSplit.style.display = 'inline-flex';
+      btnSplit.disabled = segs.length === 0;
+
+      toast(blanks.length ? 'Found ' + blanks.length + ' blank page(s)! Click Preview to inspect.' : 'Scan complete, 0 blanks found', 'ok');
+    } catch(e) {
+      toast('Error: ' + e.message, 'err');
+      console.error(e);
+    }
+    prg.classList.remove('on');
+    btn.innerHTML = '🔍 Re-Analyze';
+    btn.disabled = false;
   };
+
+  
+  window.previewCleanedPdf = async function() {
+    if(!ok() || !tF.a || !aNonBlanks.length) return;
+    toast('Preparing full-screen preview…', 'ok');
+    try {
+      var src = await PDFLib.PDFDocument.load(tF.a.bytes);
+      var nd  = await PDFLib.PDFDocument.create();
+      var base = tF.a.file.name.replace(/\.pdf$/i, '');
+      var fname = base + '_no_blanks.pdf';
+
+      var indices = aNonBlanks.map(function(p){ return p - 1; });
+      var copied  = await nd.copyPages(src, indices);
+      copied.forEach(function(p){ nd.addPage(p); });
+
+      var cleanBytes = await nd.save({ useObjectStreams: true });
+      await openPvCustom(cleanBytes, fname, function() {
+        dl(cleanBytes, fname);
+        toast('Downloaded ' + fname, 'ok');
+      });
+    } catch(e) {
+      toast('Preview error: ' + e.message, 'err');
+      console.error(e);
+    }
+  };
+
+  
+  window.previewSpecificPage = async function(pageNum) {
+    if(!ok() || !tF.a) return;
+    toast('Opening Page ' + pageNum + ' in full screen…', 'ok');
+    await openPvCustom(tF.a.bytes, tF.a.file.name + ' (Page ' + pageNum + ')', function(){
+      dl(tF.a.bytes, tF.a.file.name);
+    }, pageNum - 1);
+  };
+
+  
+  window.doDownloadNoBlanks = async function() {
+    if(!ok() || !tF.a || !aNonBlanks.length) return;
+    var tf = tF.a, btn = document.getElementById('ba-single'), prg = document.getElementById('a-prg');
+    btn.innerHTML = '<span class="sp"></span> Creating Clean PDF…'; btn.disabled = true; prg.classList.add('on');
+    try {
+      var src = await PDFLib.PDFDocument.load(tf.bytes);
+      var nd = await PDFLib.PDFDocument.create();
+      var base = tf.file.name.replace(/\.pdf$/i, '');
+
+      document.getElementById('a-bar').style.width = '30%';
+      document.getElementById('a-txt').textContent = 'Extracting ' + aNonBlanks.length + ' content pages…';
+      await slp(30);
+
+      var indices = aNonBlanks.map(function(p){ return p - 1; });
+      var copied = await nd.copyPages(src, indices);
+      copied.forEach(function(p){ nd.addPage(p); });
+
+      document.getElementById('a-bar').style.width = '85%';
+      document.getElementById('a-txt').textContent = 'Writing single clean PDF…';
+      await slp(30);
+
+      var out = await nd.save({ useObjectStreams: true });
+      document.getElementById('a-bar').style.width = '100%';
+      dl(out, base + '_no_blanks.pdf');
+      toast('Downloaded single cleaned PDF (' + aNonBlanks.length + ' pages, ' + aBlanks.length + ' blanks removed)!', 'ok');
+    } catch(e) {
+      toast('Error: ' + e.message, 'err');
+      console.error(e);
+    }
+    prg.classList.remove('on');
+    btn.innerHTML = '📄 Download Single PDF (No Blanks — ' + aNonBlanks.length + ' pgs)';
+    btn.disabled = false;
+  };
+
   window.doAutoSplit = async function() {
     if(!ok()||!tF.a||!aSegs.length)return;
     var tf=tF.a,btn=document.getElementById('ba-sp'),prg=document.getElementById('a-prg');
     btn.innerHTML='<span class="sp"></span> Splitting…'; btn.disabled=true; prg.classList.add('on');
     try {
-      var src=await PDFLib.PDFDocument.load(tf.ab), base=tf.file.name.replace(/\.pdf$/i,'');
+      var src=await PDFLib.PDFDocument.load(tf.bytes), base=tf.file.name.replace(/\.pdf$/i,'');
       for(var i=0;i<aSegs.length;i++){
         document.getElementById('a-bar').style.width=Math.round((i+1)/aSegs.length*100)+'%';
         document.getElementById('a-txt').textContent='Saving segment '+(i+1)+' of '+aSegs.length;
@@ -1479,7 +2690,7 @@ window.addEventListener('load', function() {
       }
       toast('Auto-split done! '+aSegs.length+' files downloaded','ok');
     } catch(e){toast('Error: '+e.message,'err');console.error(e);}
-    prg.classList.remove('on'); btn.innerHTML='🧠 Auto-Split &amp; Download All'; btn.disabled=false;
+    prg.classList.remove('on'); btn.innerHTML='📦 Split into Multiple Files'; btn.disabled=false;
   };
 
 }); // end window.load
